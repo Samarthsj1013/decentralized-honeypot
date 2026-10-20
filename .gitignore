@@ -12,3 +12,4 @@ coverage/
 *.log
 experiments/results/*
 !experiments/results/.gitkeep
+backend/data/

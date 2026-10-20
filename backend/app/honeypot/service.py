@@ -9,13 +9,20 @@ from backend.app.events.models import (
     InteractionRequest,
 )
 from backend.app.events.store import EventStore
+from backend.app.ledger.service import EventLedger, event_ledger
 
 
 class HoneypotService:
     """Manages synthetic decoys and records their interactions."""
 
-    def __init__(self, store: EventStore) -> None:
+    def __init__(
+        self,
+        store: EventStore,
+        ledger: EventLedger | None = None,
+    ) -> None:
         self._store = store
+        self._ledger = ledger if ledger is not None else event_ledger
+
         self._decoys = {
             "decoy-finance-001": DecoyAsset(
                 decoy_id="decoy-finance-001",
@@ -65,4 +72,7 @@ class HoneypotService:
             action=request.action,
         )
 
-        return self._store.add(event)
+        self._store.add(event)
+        self._ledger.append(event)
+
+        return event
