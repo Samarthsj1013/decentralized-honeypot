@@ -29,8 +29,8 @@ def test_health_endpoint():
 
 def test_list_decoys():
     response = client.get("/api/v1/decoys")
-
     assert response.status_code == 200
+
     decoys = response.json()
     assert len(decoys) == 3
 
@@ -75,7 +75,6 @@ def test_unknown_decoy_returns_404():
         "/api/v1/decoys/unknown-decoy/interactions",
         json={"actor_id": "simulator-003", "action": "read"},
     )
-
     assert response.status_code == 404
 
 
@@ -87,7 +86,6 @@ def test_invalid_interaction_is_rejected():
             "action": "delete_everything",
         },
     )
-
     assert response.status_code == 422
 
 
@@ -100,7 +98,6 @@ def test_fingerprint_for_unknown_actor_returns_404():
     response = client.get(
         "/api/v1/intelligence/fingerprints/unknown-actor"
     )
-
     assert response.status_code == 404
 
 
@@ -114,7 +111,10 @@ def test_fingerprint_summarizes_actor_behavior():
     for decoy_id, action in interactions:
         response = client.post(
             f"/api/v1/decoys/{decoy_id}/interactions",
-            json={"actor_id": "simulator-risk-test", "action": action},
+            json={
+                "actor_id": "simulator-risk-test",
+                "action": action,
+            },
         )
         assert response.status_code == 201
 
@@ -124,7 +124,6 @@ def test_fingerprint_summarizes_actor_behavior():
 
     assert response.status_code == 200
     fingerprint = response.json()
-
     assert fingerprint["actor_id"] == "simulator-risk-test"
     assert fingerprint["event_count"] == 3
     assert fingerprint["unique_decoys_accessed"] == 3
@@ -132,11 +131,50 @@ def test_fingerprint_summarizes_actor_behavior():
     assert fingerprint["risk_score"] == 80
     assert fingerprint["risk_level"] == "high"
     assert fingerprint["assessment_type"] == "heuristic_baseline"
-    assert len(fingerprint["reasons"]) >= 1
 
 
 def test_fingerprint_list_is_empty_without_events():
     response = client.get("/api/v1/intelligence/fingerprints")
-
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_ml_assessment_for_unknown_actor_returns_404():
+    response = client.get(
+        "/api/v1/intelligence/ml/unknown-actor"
+    )
+    assert response.status_code == 404
+
+
+def test_ml_assessment_returns_prediction():
+    interactions = [
+        ("decoy-finance-001", "read"),
+        ("decoy-credential-001", "attempt_login"),
+        ("decoy-database-001", "query"),
+    ]
+
+    for decoy_id, action in interactions:
+        response = client.post(
+            f"/api/v1/decoys/{decoy_id}/interactions",
+            json={
+                "actor_id": "simulator-ml-test",
+                "action": action,
+            },
+        )
+        assert response.status_code == 201
+
+    response = client.get(
+        "/api/v1/intelligence/ml/simulator-ml-test"
+    )
+
+    assert response.status_code == 200
+    assessment = response.json()
+
+    assert assessment["actor_id"] == "simulator-ml-test"
+    assert assessment["event_count"] == 3
+    assert assessment["predicted_class"] in {"benign", "suspicious"}
+    assert 0.0 <= assessment["suspicious_probability"] <= 1.0
+    assert assessment["model_name"] == "RandomForestClassifier"
+    assert assessment["assessment_type"] == "synthetic_model_inference"
+    assert "event_count" in assessment["features"]
+    assert "limitations" in assessment

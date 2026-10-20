@@ -8,6 +8,10 @@ from backend.app.events.models import (
 )
 from backend.app.events.store import event_store
 from backend.app.honeypot.service import HoneypotService
+from backend.app.intelligence.ml_service import (
+    MLBehaviorAssessment,
+    ml_intelligence_service,
+)
 from backend.app.intelligence.service import (
     BehavioralFingerprint,
     intelligence_service,
@@ -18,11 +22,7 @@ router = APIRouter(prefix="/api/v1")
 honeypot_service = HoneypotService(event_store)
 
 
-@router.get(
-    "/decoys",
-    response_model=list[DecoyAsset],
-    tags=["Honeypot"],
-)
+@router.get("/decoys", response_model=list[DecoyAsset], tags=["Honeypot"])
 async def list_decoys() -> list[DecoyAsset]:
     """List the registered synthetic decoy assets."""
     return honeypot_service.list_decoys()
@@ -89,7 +89,7 @@ async def get_event(event_id: str) -> HoneypotEvent:
     tags=["Threat Intelligence"],
 )
 async def list_fingerprints() -> list[BehavioralFingerprint]:
-    """Analyze all synthetic actors with recorded interactions."""
+    """Analyze all synthetic actors using heuristic rules."""
     return intelligence_service.analyze_all()
 
 
@@ -99,7 +99,7 @@ async def list_fingerprints() -> list[BehavioralFingerprint]:
     tags=["Threat Intelligence"],
 )
 async def get_fingerprint(actor_id: str) -> BehavioralFingerprint:
-    """Analyze the recorded behavior of one synthetic actor."""
+    """Retrieve a rule-based behavioral fingerprint."""
     fingerprint = intelligence_service.analyze_actor(actor_id)
 
     if fingerprint is None:
@@ -109,3 +109,15 @@ async def get_fingerprint(actor_id: str) -> BehavioralFingerprint:
         )
 
     return fingerprint
+
+
+@router.get(
+    "/intelligence/ml/{actor_id}",
+    response_model=MLBehaviorAssessment,
+    tags=["Machine Learning"],
+)
+async def assess_actor_with_ml(
+    actor_id: str,
+) -> MLBehaviorAssessment:
+    """Assess an actor using the trained Random Forest model."""
+    return ml_intelligence_service.analyze_actor(actor_id)
