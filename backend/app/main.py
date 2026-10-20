@@ -2,6 +2,8 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from backend.app.api.routes import router as honeypot_router
+
 app = FastAPI(
     title="Decentralized Honeypot Network",
     description=(
@@ -12,10 +14,11 @@ app = FastAPI(
     version="0.1.0",
 )
 
+app.include_router(honeypot_router)
+
 
 @app.get("/", tags=["General"])
 async def root() -> dict[str, str]:
-    """Return basic information about the API."""
     return {
         "project": "Decentralized AI Self-Evolving Honeypot Network",
         "status": "running",
@@ -26,7 +29,6 @@ async def root() -> dict[str, str]:
 
 @app.get("/health", tags=["Health"])
 async def health_check() -> JSONResponse:
-    """Report whether the API process is responding."""
     return JSONResponse(
         status_code=200,
         content={

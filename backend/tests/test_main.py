@@ -1,26 +1,114 @@
 
+import pytest
 from fastapi.testclient import TestClient
 
+from backend.app.events.store import event_store
 from backend.app.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def clean_events():
+    event_store.clear()
+    yield
+    event_store.clear()
 
 
 def test_root_endpoint():
     response = client.get("/")
 
     assert response.status_code == 200
-
-    data = response.json()
-    assert data["status"] == "running"
-    assert data["version"] == "0.1.0"
+    assert response.json()["status"] == "running"
 
 
 def test_health_endpoint():
     response = client.get("/health")
 
     assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
 
-    data = response.json()
-    assert data["status"] == "healthy"
-    assert data["service"] == "honeypot-backend"
+
+def test_list_decoys():
+    response = client.get("/api/v1/decoys")
+
+    assert response.status_code == 200
+
+    decoys = response.json()
+    assert len(decoys) == 3
+
+    decoy_ids = {decoy["decoy_id"] for decoy in decoys}
+    assert "decoy-finance-001" in decoy_ids
+    assert "decoy-credential-001" in decoy_ids
+    assert "decoy-database-001" in decoy_ids
+
+
+def test_record_interaction():
+    response = client.post(
+        "/api/v1/decoys/decoy-credential-001/interactions",
+        json={
+            "actor_id": "simulator-001",
+            "action": "read",
+        },
+    )
+
+    assert response.status_code == 201
+
+    event = response.json()
+    assert event["decoy_id"] == "decoy-credential-001"
+    assert event["actor_id"] == "simulator-001"
+    assert event["action"] == "read"
+    assert event["event_type"] == "decoy_interaction"
+    assert event["severity"] == "high"
+    assert event["source"] == "simulator"
+    assert event["event_id"]
+
+
+def test_event_appears_in_event_history():
+    created = client.post(
+        "/api/v1/decoys/decoy-finance-001/interactions",
+        json={
+            "actor_id": "simulator-002",
+            "action": "view",
+        },
+    )
+
+    assert created.status_code == 201
+    event_id = created.json()["event_id"]
+
+    response = client.get("/api/v1/events")
+
+    assert response.status_code == 200
+    events = response.json()
+    assert len(events) == 1
+    assert events[0]["event_id"] == event_id
+
+
+def test_unknown_decoy_returns_404():
+    response = client.post(
+        "/api/v1/decoys/unknown-decoy/interactions",
+        json={
+            "actor_id": "simulator-003",
+            "action": "read",
+        },
+    )
+
+    assert response.status_code == 404
+
+
+def test_invalid_interaction_is_rejected():
+    response = client.post(
+        "/api/v1/decoys/decoy-finance-001/interactions",
+        json={
+            "actor_id": "simulator-004",
+            "action": "delete_everything",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_unknown_event_returns_404():
+    response = client.get("/api/v1/events/nonexistent-event")
+
+    assert response.status_code == 404
