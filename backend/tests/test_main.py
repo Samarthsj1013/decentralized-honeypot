@@ -317,3 +317,50 @@ def test_ledger_list_limit_is_respected():
     entries = response.json()
     assert len(entries) == 2
     assert [entry["sequence"] for entry in entries] == [3, 2]
+
+
+def test_ledger_integrity_endpoint_reports_valid_ledger():
+    response = client.get("/api/v1/ledger/integrity")
+
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["integrity_valid"] is True
+    assert data["current"]["valid"] is True
+    assert data["startup"]["valid"] is True
+    assert data["entries_checked"] == 0
+
+
+def test_ledger_integrity_endpoint_includes_verification_details():
+    response = client.get("/api/v1/ledger/integrity")
+
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "startup" in data
+    assert "current" in data
+    assert "integrity_valid" in data
+    assert "entries_checked" in data
+
+    assert "message" in data["startup"]
+    assert "message" in data["current"]
+
+
+def test_checkpoint_api_rejects_modified_signature():
+    checkpoint_response = client.post("/api/v1/ledger/checkpoint")
+
+    assert checkpoint_response.status_code == 200
+
+    checkpoint = checkpoint_response.json()
+    checkpoint["signature"] = "invalid-signature"
+
+    verification_response = client.post(
+        "/api/v1/ledger/checkpoint/verify",
+        json=checkpoint,
+    )
+
+    assert verification_response.status_code == 200
+
+    result = verification_response.json()
+    assert result["valid"] is False
+    assert result["signature_valid"] is False
