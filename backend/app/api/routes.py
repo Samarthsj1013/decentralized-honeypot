@@ -126,6 +126,21 @@ async def get_adaptation_decision(actor_id: str):
 
 
 @router.get(
+    "/adaptation/{actor_id}/history",
+    tags=["Adaptive Honeypot"],
+)
+async def get_adaptation_history(
+    actor_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    return adaptive_honeypot_service.get_decision_history(
+        actor_id=actor_id,
+        limit=limit,
+    )
+
+
+
+@router.get(
     "/ledger",
     response_model=list[LedgerEntry],
     tags=["Event Ledger"],
