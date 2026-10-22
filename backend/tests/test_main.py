@@ -96,6 +96,7 @@ def test_fingerprint_for_unknown_actor_returns_404():
     assert response.status_code == 404
 
 def test_fingerprint_summarizes_actor_behavior():
+    actor_id = f"simulator-risk-test-{uuid4().hex}"
     interactions = [
         ("decoy-finance-001", "read"),
         ("decoy-credential-001", "attempt_login"),
@@ -103,15 +104,15 @@ def test_fingerprint_summarizes_actor_behavior():
     ]
     for decoy_id, action in interactions:
         response = record_interaction(
-            "simulator-risk-test", decoy_id, action
+            actor_id, decoy_id, action
         )
-        assert response.status_code == 201
+        assert response.status_code == 201, response.text
     response = client.get(
-        "/api/v1/intelligence/fingerprints/simulator-risk-test"
+        f"/api/v1/intelligence/fingerprints/{actor_id}"
     )
     assert response.status_code == 200
     fingerprint = response.json()
-    assert fingerprint["actor_id"] == "simulator-risk-test"
+    assert fingerprint["actor_id"] == actor_id
     assert fingerprint["event_count"] == 3
     assert fingerprint["unique_decoys_accessed"] == 3
     assert fingerprint["unique_actions"] == 3
@@ -129,6 +130,7 @@ def test_ml_assessment_for_unknown_actor_returns_404():
     assert response.status_code == 404
 
 def test_ml_assessment_returns_prediction():
+    actor_id = f"simulator-ml-test-{uuid4().hex}"
     interactions = [
         ("decoy-finance-001", "read"),
         ("decoy-credential-001", "attempt_login"),
@@ -136,15 +138,15 @@ def test_ml_assessment_returns_prediction():
     ]
     for decoy_id, action in interactions:
         response = record_interaction(
-            "simulator-ml-test", decoy_id, action
+            actor_id, decoy_id, action
         )
-        assert response.status_code == 201
+        assert response.status_code == 201, response.text
     response = client.get(
-        "/api/v1/intelligence/ml/simulator-ml-test"
+        f"/api/v1/intelligence/ml/{actor_id}"
     )
     assert response.status_code == 200
     assessment = response.json()
-    assert assessment["actor_id"] == "simulator-ml-test"
+    assert assessment["actor_id"] == actor_id
     assert assessment["event_count"] == 3
     assert assessment["predicted_class"] in {"benign", "suspicious"}
     assert 0.0 <= assessment["suspicious_probability"] <= 1.0
@@ -200,6 +202,7 @@ def test_adaptation_selects_database_strategy_for_query():
     assert "query" in decision["observed_actions"]
 
 def test_adaptation_selects_expanded_path_for_combined_activity():
+    actor_id = f"simulator-adaptive-high-{uuid4().hex}"
     interactions = [
         ("decoy-finance-001", "read"),
         ("decoy-credential-001", "attempt_login"),
@@ -207,15 +210,15 @@ def test_adaptation_selects_expanded_path_for_combined_activity():
     ]
     for decoy_id, action in interactions:
         response = record_interaction(
-            "simulator-adaptive-high", decoy_id, action
+            actor_id, decoy_id, action
         )
-        assert response.status_code == 201
+        assert response.status_code == 201, response.text
     response = client.get(
-        "/api/v1/adaptation/simulator-adaptive-high"
+        f"/api/v1/adaptation/{actor_id}"
     )
     assert response.status_code == 200
     decision = response.json()
-    assert decision["actor_id"] == "simulator-adaptive-high"
+    assert decision["actor_id"] == actor_id
     assert decision["event_count"] == 3
     assert decision["risk_level"] == "high"
     assert decision["selected_strategy"] == "expanded_decoy_path"
@@ -240,13 +243,14 @@ def test_interaction_is_added_to_ledger():
     assert entries[0]["sequence"] == 1
 
 def test_ledger_verify_endpoint_reports_valid_chain():
+    actor_id = f"ledger-verify-test-{uuid4().hex}"
     for action in ("read", "attempt_login"):
         response = record_interaction(
-            "ledger-verify-test",
+            actor_id,
             "decoy-credential-001",
             action,
         )
-        assert response.status_code == 201
+        assert response.status_code == 201, response.text
     response = client.get("/api/v1/ledger/verify")
     assert response.status_code == 200
     result = response.json()

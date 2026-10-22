@@ -192,8 +192,11 @@ def test_read_then_login_generates_persisted_decoys_once():
 
 
 def test_strategy_observations_are_isolated_by_actor():
-    first_actor = "integration-isolated-actor-001"
-    second_actor = "integration-isolated-actor-002"
+    # The application stores observations and generated bundles persistently.
+    # Unique IDs keep this test independent of earlier runs using the same DB.
+    run_id = uuid4().hex
+    first_actor = f"integration-isolated-actor-001-{run_id}"
+    second_actor = f"integration-isolated-actor-002-{run_id}"
 
     assert client.post(
         "/api/v1/decoys/decoy-finance-001/interactions",
