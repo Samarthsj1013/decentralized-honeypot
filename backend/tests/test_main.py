@@ -161,7 +161,7 @@ def test_adaptation_for_unknown_actor_returns_404():
     )
     assert response.status_code == 404
 
-def test_adaptation_selects_neutral_strategy_for_read_only_activity():
+def test_adaptation_selects_file_strategy_for_read_activity():
     response = record_interaction(
         "simulator-neutral", "decoy-finance-001", "read"
     )
@@ -172,7 +172,7 @@ def test_adaptation_selects_neutral_strategy_for_read_only_activity():
     assert decision["actor_id"] == "simulator-neutral"
     assert decision["event_count"] == 1
     assert decision["risk_level"] == "low"
-    assert decision["selected_strategy"] == "neutral_response"
+    assert decision["selected_strategy"] == "file_decoy"
     assert decision["simulation_only"] is True
 
 def test_adaptation_selects_credential_strategy_for_login_attempt():
@@ -335,10 +335,13 @@ def test_adaptation_history_contains_saved_decision():
     history = history_response.json()
     assert len(history) == 1
     assert history[0]["actor_id"] == actor_id
-    assert history[0]["selected_strategy"] == "neutral_response"
+    assert history[0]["selected_strategy"] == "file_decoy"
     assert history[0]["decision_id"] is not None
     assert history[0]["created_at"] is not None
     assert history[0]["simulation_only"] is True
+    assert history[0]["fingerprint_version"] == 1
+    assert history[0]["influencing_features"]["event_count"] == 1
+    assert history[0]["strategy_changed_from"] is None
 
 def test_adaptation_history_is_chronological():
     actor_id = f"history-order-{uuid4().hex}"
@@ -359,7 +362,7 @@ def test_adaptation_history_is_chronological():
     history = response.json()
     assert len(history) == 2
     assert history[0]["decision_id"] < history[1]["decision_id"]
-    assert history[0]["selected_strategy"] == "neutral_response"
+    assert history[0]["selected_strategy"] == "file_decoy"
     assert history[1]["selected_strategy"] == "credential_decoy"
 
 def test_adaptation_history_limit_is_respected():

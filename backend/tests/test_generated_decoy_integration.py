@@ -126,9 +126,9 @@ def test_read_then_login_generates_persisted_decoys_once():
         json={"actor_id": actor_id, "action": "read"},
     )
     assert first.status_code == 201
-    assert history_storage.get_observed_strategy(actor_id) == "neutral_response"
+    assert history_storage.get_observed_strategy(actor_id) == "file_decoy"
 
-    # Reading is the actor's baseline strategy; a login attempt changes it.
+    # Reading selects a file bundle; the login attempt changes the strategy.
     changed = client.post(
         "/api/v1/decoys/decoy-credential-001/interactions",
         json={"actor_id": actor_id, "action": "attempt_login"},
@@ -141,24 +141,30 @@ def test_read_then_login_generates_persisted_decoys_once():
         for decoy in generated_decoy_registry.list_all()
         if decoy.actor_id == actor_id
     ]
-    assert len(actor_decoys) == 2
+    assert len(actor_decoys) == 3
+    bundles = generated_decoy_registry.list_bundles(actor_id)
+    assert len(bundles) == 2
+    assert all(bundle.actor_id == actor_id for bundle in bundles)
 
     listed = client.get("/api/v1/decoys")
     assert listed.status_code == 200
     after_change = {
         decoy["decoy_id"]
         for decoy in listed.json()
-        if decoy["decoy_id"].startswith("generated-")
+        if decoy["decoy_id"].startswith("bundle-")
         and decoy["decoy_id"] not in initial_ids
     }
     generated_ids = {decoy.decoy_id for decoy in actor_decoys}
     assert after_change == generated_ids
     assert generated_ids.isdisjoint(initial_ids)
 
-    # GET adaptation records a decision but does not replace the trigger state.
+    # GET adaptation is a read-only preview and does not add decision history.
+    history_before_get = history_storage.list_decisions(actor_id)
     decision = client.get(f"/api/v1/adaptation/{actor_id}")
     assert decision.status_code == 200
     assert decision.json()["selected_strategy"] == "credential_decoy"
+    assert decision.json()["strategy_changed_from"] == "file_decoy"
+    assert history_storage.list_decisions(actor_id) == history_before_get
     assert history_storage.get_observed_strategy(actor_id) == "credential_decoy"
 
     repeated = client.post(
@@ -172,7 +178,7 @@ def test_read_then_login_generates_persisted_decoys_once():
     after_repeat = {
         decoy["decoy_id"]
         for decoy in listed_again.json()
-        if decoy["decoy_id"].startswith("generated-")
+        if decoy["decoy_id"].startswith("bundle-")
         and decoy["decoy_id"] not in initial_ids
     }
     assert after_repeat == after_change
@@ -193,19 +199,47 @@ def test_strategy_observations_are_isolated_by_actor():
         "/api/v1/decoys/decoy-finance-001/interactions",
         json={"actor_id": first_actor, "action": "read"},
     ).status_code == 201
-    before_second_actor = {
-        decoy["decoy_id"]
-        for decoy in client.get("/api/v1/decoys").json()
-    }
-
     response = client.post(
         "/api/v1/decoys/decoy-credential-001/interactions",
         json={"actor_id": second_actor, "action": "attempt_login"},
     )
     assert response.status_code == 201
 
-    after_second_actor = {
-        decoy["decoy_id"]
-        for decoy in client.get("/api/v1/decoys").json()
-    }
-    assert after_second_actor == before_second_actor
+    assert adaptive_honeypot_service._history_storage.get_observed_strategy(
+        first_actor
+    ) == "file_decoy"
+    assert adaptive_honeypot_service._history_storage.get_observed_strategy(
+        second_actor
+    ) == "credential_decoy"
+    assert {
+        decoy.actor_id
+        for decoy in generated_decoy_registry.list_all()
+        if decoy.actor_id in {first_actor, second_actor}
+    } == {first_actor, second_actor}
+
+
+def test_bundle_api_retrieval_and_validation_are_read_only():
+    actor_id = f"integration-bundle-api-{uuid4().hex}"
+    assert client.post(
+        "/api/v1/decoys/decoy-credential-001/interactions",
+        json={"actor_id": actor_id, "action": "attempt_login"},
+    ).status_code == 201
+
+    generated = client.post(
+        f"/api/v1/bundles/generate/{actor_id}",
+        params={"scenario_id": "api-test"},
+    )
+    assert generated.status_code == 200
+    payload = generated.json()
+    bundle_id = payload["bundle"]["bundle_id"]
+    assert payload["created"] is True
+    assert payload["validation"]["valid"] is True
+
+    count_before = len(generated_decoy_registry.list_bundles(actor_id))
+    retrieved = client.get(f"/api/v1/bundles/{bundle_id}")
+    validation = client.get(f"/api/v1/bundles/{bundle_id}/validation")
+    assert retrieved.status_code == validation.status_code == 200
+    assert retrieved.json() == payload["bundle"]
+    assert validation.json()["valid"] is True
+    assert len(generated_decoy_registry.list_bundles(actor_id)) == count_before
+    assert client.get(f"/api/v1/decoys").status_code == 200

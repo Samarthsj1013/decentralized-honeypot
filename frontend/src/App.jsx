@@ -60,6 +60,32 @@ function KpiCard({ label, value, detail, icon, tone = "teal" }) {
   );
 }
 
+function PolicyModeComparison({ modes }) {
+  return (
+    <section className="policy-comparison-section" aria-label="Baseline and behavior-conditioned comparison">
+      <div className="section-heading">
+        <div><span className="eyebrow">POLICY COMPARISON</span><h2>Baseline vs behavior-conditioned</h2><p>Each policy uses fresh actors and simulation IDs. These synthetic runs measure workflow behavior, not real-world defense effectiveness.</p></div>
+      </div>
+      <div className="policy-comparison-grid">
+        {modes.map((mode) => (
+          <article className="panel policy-mode-card" key={mode.policy_mode}>
+            <div className="policy-mode-title"><h3>{mode.policy_mode.replaceAll("_", " ")}</h3><span>{mode.completed_runs} / {mode.runs_requested} completed</span></div>
+            <dl className="policy-mode-metrics">
+              <div><dt>Completion</dt><dd>{formatPercent(mode.completion_rate)}</dd></div>
+              <div><dt>Strategy changes</dt><dd>{formatRatio(mode.strategy_changed_runs, mode.strategy_measurement_runs)}</dd></div>
+              <div><dt>Decoys generated</dt><dd>{mode.decoys_generated.toLocaleString()}</dd></div>
+              <div><dt>Validated bundles</dt><dd>{mode.validated_bundles ?? 0} / {mode.bundles_generated ?? 0}</dd></div>
+              <div><dt>Median latency</dt><dd>{formatLatency(mode.median_latency_ms)}</dd></div>
+              <div><dt>Errors</dt><dd>{mode.errors.toLocaleString()}</dd></div>
+              <div className="policy-categories"><dt>Generated categories</dt><dd>{Object.entries(mode.generated_decoy_categories || {}).map(([category, count]) => `${category}: ${count}`).join(" · ") || "None"}</dd></div>
+            </dl>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ScenarioChart({ title, subtitle, rows, metric, unit, color, maxValue }) {
   const width = 620;
   const height = 238;
@@ -194,6 +220,9 @@ function RunDetails({ evaluation }) {
               <div className="detail-wide"><dt>Recorded actions</dt><dd>{summary?.observed_actions?.join(" → ") || "None recorded"}</dd></div>
               <div className="detail-wide"><dt>Observed decoys</dt><dd className="mono">{summary?.observed_decoys?.join(", ") || "None recorded"}</dd></div>
               <div className="detail-wide"><dt>Generated decoy IDs</dt><dd className="mono">{summary?.generated_decoy_ids?.join(", ") || "None"}</dd></div>
+              <div className="detail-wide"><dt>Bundle IDs</dt><dd className="mono">{summary?.bundle_ids?.join(", ") || "None"}</dd></div>
+              <div><dt>Bundle assets</dt><dd>{Object.entries(summary?.bundle_asset_categories || {}).map(([category, count]) => `${category}: ${count}`).join(" · ") || "None"}</dd></div>
+              <div><dt>Bundle validation</dt><dd>{summary?.bundle_validation_results?.length ? summary.bundle_validation_results.map((result) => `${result.bundle_id}: ${result.valid ? "valid" : "invalid"}`).join(" · ") : "None"}</dd></div>
               {run.execution_error && <div className="detail-wide"><dt>Execution error</dt><dd className="error-copy">{run.execution_error}</dd></div>}
               {!!summary?.errors?.length && <div className="detail-wide"><dt>Interaction errors</dt><dd className="error-copy">{summary.errors.map((error) => `Step ${error.step}: ${error.message}`).join(" · ")}</dd></div>}
             </dl>
@@ -381,6 +410,8 @@ export default function App() {
                 <KpiCard label="Evaluation duration" value={`${(evaluation.elapsed_seconds * 1000).toFixed(0)} ms`} detail={`${evaluation.repetitions_per_scenario} repetitions per scenario`} icon="pulse" tone="green" />
               </div>
             </section>
+
+            {evaluation.policy_mode_metrics?.length > 0 && <PolicyModeComparison modes={evaluation.policy_mode_metrics} />}
 
             <section className="charts-section" id="scenarios">
               <div className="section-heading"><div><span className="eyebrow">COMPARATIVE ANALYSIS</span><h2>Scenario comparison</h2><p>Each chart uses the selected evaluation’s per-scenario aggregate.</p></div></div>

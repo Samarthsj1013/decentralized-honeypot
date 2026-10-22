@@ -76,22 +76,60 @@ def test_multi_stage_changes_strategy_and_persists_generated_decoys():
 
     assert response.status_code == 201
     summary = response.json()
-    assert summary["initial_adaptation_strategy"] is None
+    assert summary["initial_adaptation_strategy"] == "neutral_response"
     assert summary["final_adaptation_strategy"] == "expanded_decoy_path"
     assert summary["observed_strategies"] == [
-        "neutral_response",
+        "file_decoy",
         "credential_decoy",
         "expanded_decoy_path",
     ]
-    assert summary["strategy_change_count"] == 2
-    assert summary["decoys_generated"] == 4
-    assert len(summary["generated_decoy_ids"]) == 4
+    assert summary["strategy_change_count"] == 3
+    assert summary["decoys_generated"] == 6
+    assert len(summary["generated_decoy_ids"]) == 6
+    assert summary["generated_decoy_categories"] == {
+        "credential": 2,
+        "database_record": 1,
+        "file": 3,
+    }
+    assert len(summary["bundle_ids"]) == 3
+    assert all(result["valid"] for result in summary["bundle_validation_results"])
     listed = client.get("/api/v1/decoys")
     assert listed.status_code == 200
     listed_ids = {decoy["decoy_id"] for decoy in listed.json()}
     assert len(summary["observed_decoys"]) == 3
     assert len(set(summary["event_ids"])) == 3
     assert set(summary["generated_decoy_ids"]).issubset(listed_ids)
+
+
+def test_policy_lanes_compare_neutral_baseline_with_behavior_conditioning():
+    baseline = client.post(
+        "/api/v1/simulation/runs",
+        json={
+            "scenario": "credential_probing",
+            "simulation_id": f"sim-{uuid4().hex}",
+            "actor_id": f"actor-{uuid4().hex}",
+            "policy_mode": "baseline",
+        },
+    )
+    conditioned = client.post(
+        "/api/v1/simulation/runs",
+        json={
+            "scenario": "credential_probing",
+            "simulation_id": f"sim-{uuid4().hex}",
+            "actor_id": f"actor-{uuid4().hex}",
+            "policy_mode": "behavior_conditioned",
+        },
+    )
+
+    assert baseline.status_code == conditioned.status_code == 201
+    baseline_summary = baseline.json()
+    conditioned_summary = conditioned.json()
+    assert baseline_summary["final_adaptation_strategy"] == "neutral_response"
+    assert baseline_summary["strategy_change_count"] == 0
+    assert baseline_summary["decoys_generated"] == 0
+    assert conditioned_summary["final_adaptation_strategy"] == "credential_decoy"
+    assert conditioned_summary["strategy_change_count"] == 1
+    assert conditioned_summary["decoys_generated"] == 1
 
 
 def test_repeated_access_records_each_event_without_extra_decoys():
@@ -114,8 +152,8 @@ def test_repeated_access_records_each_event_without_extra_decoys():
         "decoy-finance-001",
         "decoy-finance-001",
     ]
-    assert summary["decoys_generated"] == 0
-    assert summary["generated_decoy_ids"] == []
+    assert summary["decoys_generated"] == 1
+    assert len(summary["generated_decoy_ids"]) == 1
     assert len(set(summary["event_ids"])) == 4
 
 
@@ -177,6 +215,34 @@ def test_failed_interaction_is_reported_honestly(monkeypatch):
     retrieved = client.get(f"/api/v1/simulation/runs/{simulation_id}")
     assert retrieved.status_code == 200
     assert retrieved.json() == summary
+
+
+def test_generation_failure_is_not_counted_as_success(monkeypatch):
+    def fail_generation(*args, **kwargs):
+        raise RuntimeError("synthetic generation failure")
+
+    monkeypatch.setattr(
+        attack_simulation_service._workflow._bundle_generator,
+        "generate_bundle",
+        fail_generation,
+    )
+    response = client.post(
+        "/api/v1/simulation/runs",
+        json={
+            "scenario": "credential_probing",
+            "simulation_id": f"sim-{uuid4().hex}",
+            "actor_id": f"actor-{uuid4().hex}",
+        },
+    )
+
+    assert response.status_code == 201
+    summary = response.json()
+    assert summary["interactions_recorded"] == 1
+    assert summary["decoys_generated"] == 0
+    assert summary["generated_decoy_ids"] == []
+    assert "Interaction was recorded" in summary["errors"][0]["message"]
+    assert "synthetic generation failure" in summary["errors"][0]["message"]
+    assert summary["final_adaptation_strategy"] == "neutral_response"
 
 
 @pytest.mark.parametrize(

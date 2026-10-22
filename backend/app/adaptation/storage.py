@@ -37,10 +37,37 @@ class SQLiteAdaptationStorage:
                     observed_actions TEXT NOT NULL,
                     observed_decoys TEXT NOT NULL,
                     simulation_only INTEGER NOT NULL,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    fingerprint_version INTEGER NOT NULL DEFAULT 1,
+                    influencing_features TEXT NOT NULL DEFAULT '{}',
+                    strategy_changed_from TEXT
                 )
                 """
             )
+
+            existing_columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(adaptation_decisions)"
+                )
+            }
+            migrations = {
+                "fingerprint_version": (
+                    "ALTER TABLE adaptation_decisions "
+                    "ADD COLUMN fingerprint_version INTEGER NOT NULL DEFAULT 1"
+                ),
+                "influencing_features": (
+                    "ALTER TABLE adaptation_decisions "
+                    "ADD COLUMN influencing_features TEXT NOT NULL DEFAULT '{}'"
+                ),
+                "strategy_changed_from": (
+                    "ALTER TABLE adaptation_decisions "
+                    "ADD COLUMN strategy_changed_from TEXT"
+                ),
+            }
+            for column, statement in migrations.items():
+                if column not in existing_columns:
+                    connection.execute(statement)
 
             connection.execute(
                 """
@@ -72,11 +99,7 @@ class SQLiteAdaptationStorage:
 
         return None if row is None else str(row["selected_strategy"])
 
-    def set_observed_strategy(
-        self,
-        actor_id: str,
-        strategy: str,
-    ) -> None:
+    def set_observed_strategy(self, actor_id: str, strategy: str) -> None:
         with self._lock, self._connect() as connection:
             connection.execute(
                 """
@@ -102,9 +125,12 @@ class SQLiteAdaptationStorage:
                     observed_actions,
                     observed_decoys,
                     simulation_only,
-                    created_at
+                    created_at,
+                    fingerprint_version,
+                    influencing_features,
+                    strategy_changed_from
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     decision["actor_id"],
@@ -122,6 +148,13 @@ class SQLiteAdaptationStorage:
                     ),
                     int(decision["simulation_only"]),
                     decision["created_at"],
+                    decision.get("fingerprint_version", 1),
+                    json.dumps(
+                        decision.get("influencing_features", {}),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    decision.get("strategy_changed_from"),
                 ),
             )
 
@@ -154,7 +187,10 @@ class SQLiteAdaptationStorage:
                     observed_actions,
                     observed_decoys,
                     simulation_only,
-                    created_at
+                    created_at,
+                    fingerprint_version,
+                    influencing_features,
+                    strategy_changed_from
                 FROM adaptation_decisions
                 WHERE actor_id = ?
                 ORDER BY decision_id DESC
@@ -182,6 +218,11 @@ class SQLiteAdaptationStorage:
                     ),
                     "simulation_only": bool(row["simulation_only"]),
                     "created_at": row["created_at"],
+                    "fingerprint_version": row["fingerprint_version"],
+                    "influencing_features": json.loads(
+                        row["influencing_features"]
+                    ),
+                    "strategy_changed_from": row["strategy_changed_from"],
                 }
             )
 

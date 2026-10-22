@@ -1,7 +1,9 @@
 from hashlib import sha256
+import json
+from collections import Counter
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.intelligence.service import BehavioralFingerprint
 
@@ -22,6 +24,10 @@ class GeneratedDecoy(BaseModel):
     content: dict[str, str]
     generation_strategy: str
     rationale: list[str]
+    fingerprint_version: int = 1
+    generation_parameters: dict[str, int | float | bool | str] = Field(
+        default_factory=dict
+    )
     synthetic_only: bool = True
 
 
@@ -38,6 +44,12 @@ class BehaviorConditionedDecoyGenerator:
 
         actions = set(fingerprint.action_sequence)
         accessed_types = set(fingerprint.decoy_types_accessed)
+        action_frequencies = fingerprint.action_frequencies or dict(
+            sorted(Counter(fingerprint.action_sequence).items())
+        )
+        category_frequencies = fingerprint.decoy_type_frequencies or dict(
+            sorted(Counter(fingerprint.decoy_types_accessed).items())
+        )
 
         candidates: list[
             tuple[GeneratedDecoyType, str, list[str]]
@@ -169,6 +181,7 @@ class BehaviorConditionedDecoyGenerator:
                     decoy_type=decoy_type,
                     strategy=strategy,
                     rationale=rationale,
+                    generation_limit=limit,
                 )
             )
 
@@ -189,6 +202,7 @@ class BehaviorConditionedDecoyGenerator:
                     decoy_type=decoy_type,
                     strategy=strategy,
                     rationale=rationale,
+                    generation_limit=limit,
                 )
             )
 
@@ -214,6 +228,7 @@ class BehaviorConditionedDecoyGenerator:
                     rationale=[
                         "Additional synthetic decoy generated to meet the requested limit"
                     ],
+                    generation_limit=limit,
                 )
             )
 
@@ -227,11 +242,21 @@ class BehaviorConditionedDecoyGenerator:
         decoy_type: GeneratedDecoyType,
         strategy: str,
         rationale: list[str],
+        generation_limit: int,
     ) -> GeneratedDecoy:
+        action_frequencies = fingerprint.action_frequencies or dict(
+            sorted(Counter(fingerprint.action_sequence).items())
+        )
+        category_frequencies = fingerprint.decoy_type_frequencies or dict(
+            sorted(Counter(fingerprint.decoy_types_accessed).items())
+        )
         # Stable IDs are derived from actor, type, strategy, and event count.
         identity = (
             f"{fingerprint.actor_id}|{decoy_type}|{strategy}|"
-            f"{fingerprint.event_count}"
+            f"{fingerprint.fingerprint_version}|{fingerprint.event_count}|"
+            f"{json.dumps(fingerprint.action_sequence, separators=(',', ':'))}|"
+            f"{json.dumps(fingerprint.action_frequencies, sort_keys=True, separators=(',', ':'))}|"
+            f"{json.dumps(fingerprint.decoy_type_frequencies, sort_keys=True, separators=(',', ':'))}"
         )
         suffix = sha256(
             identity.encode("utf-8")
@@ -287,7 +312,20 @@ class BehaviorConditionedDecoyGenerator:
             description=description,
             content=content,
             generation_strategy=strategy,
-            rationale=rationale,
+            rationale=rationale + [
+                f"Behavioral evidence: actions={json.dumps(action_frequencies, sort_keys=True)}; "
+                f"decoy_categories={json.dumps(category_frequencies, sort_keys=True)}."
+            ],
+            fingerprint_version=fingerprint.fingerprint_version,
+            generation_parameters={
+                "event_count": fingerprint.event_count,
+                "unique_decoys_accessed": fingerprint.unique_decoys_accessed,
+                "risk_level": fingerprint.risk_level,
+                "credential_probing": fingerprint.credential_probing,
+                "database_probing": fingerprint.database_probing,
+                "repeated_access": fingerprint.repeated_access,
+                "requested_limit": generation_limit,
+            },
         )
 
 

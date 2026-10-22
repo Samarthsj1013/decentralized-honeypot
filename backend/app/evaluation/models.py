@@ -1,12 +1,13 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.simulation.models import (
     ScenarioName,
     SimulationRunSummary,
 )
+from app.simulation.models import PolicyMode
 
 
 class EvaluationRequest(BaseModel):
@@ -20,10 +21,23 @@ class EvaluationRequest(BaseModel):
     )
     repetitions: int = Field(default=3, ge=1, le=20)
     repeated_access_count: int = Field(default=2, ge=2, le=5)
+    policy_modes: list[PolicyMode] = Field(
+        default_factory=lambda: ["baseline", "behavior_conditioned"],
+        min_length=1,
+        max_length=2,
+    )
+
+    @field_validator("policy_modes")
+    @classmethod
+    def unique_policy_modes(cls, value):
+        if len(set(value)) != len(value):
+            raise ValueError("policy_modes must not contain duplicates")
+        return value
 
 
 class EvaluationRunResult(BaseModel):
     scenario: ScenarioName
+    policy_mode: PolicyMode
     repetition: int
     simulation_id: str
     actor_id: str
@@ -51,15 +65,25 @@ class EvaluationMetrics(BaseModel):
     decoy_generation_runs: int
     decoy_generation_rate: float | None
     decoys_generated: int
+    generated_decoy_categories: dict[str, int]
+    strategy_selection_counts: dict[str, int]
     errors: int
     latency_sample_count: int
     median_latency_ms: float | None
     p95_latency_ms: float | None
     p95_minimum_sample_size: int
+    bundles_generated: int = 0
+    validated_bundles: int = 0
+    bundle_validation_failures: int = 0
+    bundle_asset_categories: dict[str, int] = Field(default_factory=dict)
 
 
 class ScenarioEvaluation(EvaluationMetrics):
     scenario: ScenarioName
+
+
+class PolicyModeEvaluation(EvaluationMetrics):
+    policy_mode: PolicyMode
 
 
 class EvaluationSummary(BaseModel):
@@ -67,6 +91,7 @@ class EvaluationSummary(BaseModel):
     status: Literal["completed", "partial"]
     repetitions_per_scenario: int
     repeated_access_count: int
+    policy_mode_metrics: list[PolicyModeEvaluation] = Field(default_factory=list)
     scenarios: list[ScenarioEvaluation]
     overall: EvaluationMetrics
     runs: list[EvaluationRunResult]

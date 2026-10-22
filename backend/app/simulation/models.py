@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from app.honeypot.bundles import BundleValidationResult
 
 
 ScenarioName = Literal[
@@ -11,6 +12,7 @@ ScenarioName = Literal[
     "multi_stage",
     "repeated_access",
 ]
+PolicyMode = Literal["baseline", "behavior_conditioned"]
 
 
 class SimulationRunRequest(BaseModel):
@@ -30,6 +32,7 @@ class SimulationRunRequest(BaseModel):
         pattern=r"^[A-Za-z0-9_-]+$",
     )
     repeat_count: int = Field(default=2, ge=2, le=5)
+    policy_mode: PolicyMode = "behavior_conditioned"
 
     @model_validator(mode="after")
     def validate_repeat_count(self):
@@ -57,6 +60,7 @@ class SimulationRunSummary(BaseModel):
     simulation_id: str
     actor_id: str
     scenario: ScenarioName
+    policy_mode: PolicyMode = "behavior_conditioned"
     interactions_attempted: int
     interactions_recorded: int
     event_ids: list[str]
@@ -68,6 +72,10 @@ class SimulationRunSummary(BaseModel):
     strategy_change_count: int | None = None
     decoys_generated: int
     generated_decoy_ids: list[str]
+    generated_decoy_categories: dict[str, int] = Field(default_factory=dict)
+    bundle_ids: list[str] = Field(default_factory=list)
+    bundle_asset_categories: dict[str, int] = Field(default_factory=dict)
+    bundle_validation_results: list[BundleValidationResult] = Field(default_factory=list)
     duplicate_decoys_avoided: int | None = None
     unavailable_measurements: list[str] = Field(default_factory=list)
     errors: list[SimulationError] = Field(default_factory=list)

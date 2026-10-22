@@ -122,6 +122,13 @@ class AttackSimulationService:
         if len(plan) > 10:
             raise HTTPException(status_code=422, detail="Scenario exceeds interaction limit")
 
+        if self._adaptation._history_storage.get_observed_strategy(actor_id) is None:
+            # Simulations have an explicit neutral starting policy so the
+            # first observed behavior can produce a measured transition.
+            self._adaptation._history_storage.set_observed_strategy(
+                actor_id, "neutral_response"
+            )
+
         started_at = datetime.now(timezone.utc)
         started_clock = perf_counter()
         initial_strategy = self._adaptation._history_storage.get_observed_strategy(
@@ -131,6 +138,9 @@ class AttackSimulationService:
             decoy.decoy_id
             for decoy in self._registry.list_all()
             if decoy.actor_id == actor_id
+        }
+        existing_bundle_ids = {
+            bundle.bundle_id for bundle in self._registry.list_bundles(actor_id)
         }
         event_ids: list[str] = []
         observed_actions: list[str] = []
@@ -155,6 +165,8 @@ class AttackSimulationService:
                 self._workflow.record_interaction(
                     decoy_id,
                     InteractionRequest(actor_id=actor_id, action=action),
+                    policy_mode=request.policy_mode,
+                    scenario_id=simulation_id,
                 )
             except Exception as exc:
                 detail = getattr(exc, "detail", None)
@@ -201,12 +213,32 @@ class AttackSimulationService:
             for decoy in self._registry.list_all()
             if decoy.actor_id == actor_id
         }
+        generated_decoy_categories: dict[str, int] = {}
+        for decoy in self._registry.list_all():
+            if decoy.decoy_id in final_actor_decoys - existing_actor_decoys:
+                generated_decoy_categories[decoy.decoy_type] = (
+                    generated_decoy_categories.get(decoy.decoy_type, 0) + 1
+                )
+        actor_bundles = self._registry.list_bundles(actor_id)
+        new_bundles = [
+            bundle for bundle in actor_bundles
+            if bundle.bundle_id not in existing_bundle_ids
+        ]
+        from app.honeypot.bundles import BundleConsistencyValidator
+        validator = BundleConsistencyValidator()
+        bundle_asset_categories = {
+            "identities": sum(len(bundle.identities) for bundle in new_bundles),
+            "database_records": sum(len(bundle.database_records) for bundle in new_bundles),
+            "files": sum(len(bundle.files) for bundle in new_bundles),
+            "api_resources": sum(len(bundle.api_resources) for bundle in new_bundles),
+        }
         ended_at = datetime.now(timezone.utc)
 
         summary = SimulationRunSummary(
             simulation_id=simulation_id,
             actor_id=actor_id,
             scenario=request.scenario,
+            policy_mode=request.policy_mode,
             interactions_attempted=len(plan),
             interactions_recorded=len(event_ids),
             event_ids=event_ids,
@@ -220,6 +252,10 @@ class AttackSimulationService:
             generated_decoy_ids=sorted(
                 final_actor_decoys - existing_actor_decoys
             ),
+            generated_decoy_categories=dict(sorted(generated_decoy_categories.items())),
+            bundle_ids=[bundle.bundle_id for bundle in new_bundles],
+            bundle_asset_categories=bundle_asset_categories,
+            bundle_validation_results=[validator.validate(bundle) for bundle in new_bundles],
             duplicate_decoys_avoided=None,
             unavailable_measurements=[
                 "duplicate_decoys_avoided: the registry does not expose insert-conflict counts"

@@ -120,6 +120,9 @@ def test_generated_content_is_synthetic_and_has_no_real_secrets(generator):
         assert decoy.actor_id == fingerprint.actor_id
         assert decoy.content
         assert "INVALID_SYNTHETIC" in decoy.content.values()
+        assert decoy.fingerprint_version == fingerprint.fingerprint_version
+        assert decoy.generation_parameters["event_count"] == fingerprint.event_count
+        assert any("Behavioral evidence" in reason for reason in decoy.rationale)
 
 
 @pytest.mark.parametrize("limit", [0, -1, 11])

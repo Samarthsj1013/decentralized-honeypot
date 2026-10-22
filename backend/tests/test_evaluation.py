@@ -35,6 +35,7 @@ def make_summary(
         simulation_id=request.simulation_id,
         actor_id=request.actor_id,
         scenario=request.scenario,
+        policy_mode=request.policy_mode,
         interactions_attempted=attempted,
         interactions_recorded=recorded,
         event_ids=[f"{request.simulation_id}-{i}" for i in range(recorded)],
@@ -46,6 +47,9 @@ def make_summary(
         strategy_change_count=strategy_changes,
         decoys_generated=decoys_generated,
         generated_decoy_ids=[f"generated-{i}" for i in range(decoys_generated)],
+        generated_decoy_categories=(
+            {"credential": decoys_generated} if decoys_generated else {}
+        ),
         errors=[
             SimulationError(
                 step=index + 1,
@@ -114,23 +118,23 @@ def test_evaluation_aggregates_completed_incomplete_and_failed_runs(tmp_path):
     )
 
     assert summary.status == "partial"
-    assert summary.overall.runs_requested == 10
-    assert summary.overall.runs_with_summary == 8
-    assert summary.overall.completed_runs == 6
-    assert summary.overall.incomplete_runs == 2
-    assert summary.overall.failed_runs == 2
+    assert summary.overall.runs_requested == 20
+    assert summary.overall.runs_with_summary == 16
+    assert summary.overall.completed_runs == 12
+    assert summary.overall.incomplete_runs == 4
+    assert summary.overall.failed_runs == 4
     assert summary.overall.completion_rate == 0.6
-    assert summary.overall.interactions_attempted == 14
-    assert summary.overall.interactions_recorded == 12
+    assert summary.overall.interactions_attempted == 28
+    assert summary.overall.interactions_recorded == 24
     assert summary.overall.event_recording_rate == 12 / 14
-    assert summary.overall.strategy_measurement_runs == 8
-    assert summary.overall.strategy_changed_runs == 2
+    assert summary.overall.strategy_measurement_runs == 16
+    assert summary.overall.strategy_changed_runs == 4
     assert summary.overall.strategy_change_rate == 0.25
-    assert summary.overall.decoy_generation_runs == 2
+    assert summary.overall.decoy_generation_runs == 4
     assert summary.overall.decoy_generation_rate == 0.25
-    assert summary.overall.decoys_generated == 8
-    assert summary.overall.errors == 4
-    assert summary.overall.latency_sample_count == 8
+    assert summary.overall.decoys_generated == 16
+    assert summary.overall.errors == 8
+    assert summary.overall.latency_sample_count == 16
     assert summary.overall.median_latency_ms == 25.0
     assert summary.overall.p95_latency_ms is None
     assert all(
@@ -165,6 +169,7 @@ def test_old_run_without_strategy_measurement_is_excluded(tmp_path):
         runs.append(
             EvaluationRunResult(
                 scenario="reconnaissance",
+                policy_mode=request.policy_mode,
                 repetition=repetition,
                 simulation_id=request.simulation_id,
                 actor_id=request.actor_id,
@@ -211,9 +216,41 @@ def test_evaluation_api_runs_and_retrieves_persisted_summary():
     assert response.status_code == 201
     body = response.json()
     assert len(body["scenarios"]) == len(SCENARIOS)
-    assert len(body["runs"]) == len(SCENARIOS)
-    assert len({run["simulation_id"] for run in body["runs"]}) == len(SCENARIOS)
-    assert len({run["actor_id"] for run in body["runs"]}) == len(SCENARIOS)
+    assert len(body["runs"]) == len(SCENARIOS) * 2
+    assert len({run["simulation_id"] for run in body["runs"]}) == len(SCENARIOS) * 2
+    assert len({run["actor_id"] for run in body["runs"]}) == len(SCENARIOS) * 2
+    assert {item["policy_mode"] for item in body["policy_mode_metrics"]} == {
+        "baseline",
+        "behavior_conditioned",
+    }
+    modes = {
+        item["policy_mode"]: item for item in body["policy_mode_metrics"]
+    }
+    assert modes["baseline"]["strategy_changed_runs"] == 0
+    assert modes["baseline"]["decoys_generated"] == 0
+    assert modes["baseline"]["strategy_selection_counts"] == {
+        "neutral_response": 8
+    }
+    assert modes["behavior_conditioned"]["strategy_changed_runs"] > 0
+    assert modes["behavior_conditioned"]["decoys_generated"] > 0
+    assert modes["behavior_conditioned"]["strategy_selection_counts"] == {
+        "credential_decoy": 2,
+        "database_decoy": 1,
+        "expanded_decoy_path": 1,
+        "file_decoy": 4,
+    }
+    assert modes["behavior_conditioned"]["bundles_generated"] == 7
+    assert modes["behavior_conditioned"]["validated_bundles"] == 7
+    assert modes["behavior_conditioned"]["bundle_validation_failures"] == 0
+    assert modes["behavior_conditioned"]["bundle_asset_categories"] == {
+        "api_resources": 4,
+        "database_records": 2,
+        "files": 5,
+        "identities": 3,
+    }
+    assert sum(
+        modes["behavior_conditioned"]["generated_decoy_categories"].values()
+    ) == modes["behavior_conditioned"]["decoys_generated"]
     multi_stage_run = next(
         run for run in body["runs"] if run["scenario"] == "multi_stage"
     )
@@ -240,6 +277,7 @@ def test_evaluation_limits_and_identifiers_are_validated():
         {"repeated_access_count": 1},
         {"repeated_access_count": 6},
         {"evaluation_id": "invalid id"},
+        {"policy_modes": ["baseline", "baseline"]},
     ):
         response = client.post("/api/v1/evaluations", json=payload)
         assert response.status_code == 422
