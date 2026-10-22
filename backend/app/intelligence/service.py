@@ -5,8 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from backend.app.events.models import HoneypotEvent
-from backend.app.events.store import EventStore, event_store
+from app.events.models import HoneypotEvent
+from app.events.store import EventStore, event_store
 
 
 class BehavioralFingerprint(BaseModel):

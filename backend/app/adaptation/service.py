@@ -1,25 +1,28 @@
-
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal
 
 from fastapi import HTTPException
 from pydantic import BaseModel
 
-from backend.app.adaptation.storage import SQLiteAdaptationStorage
-from backend.app.events.models import HoneypotEvent
-from backend.app.events.store import EventStore
+from app.adaptation.storage import SQLiteAdaptationStorage
+from app.events.models import HoneypotEvent
+from app.events.store import EventStore
+
+
+AdaptationStrategy = Literal[
+    "neutral_response",
+    "credential_decoy",
+    "database_decoy",
+    "expanded_decoy_path",
+]
 
 
 class AdaptationDecision(BaseModel):
     actor_id: str
     event_count: int
     risk_level: Literal["low", "medium", "high"]
-    selected_strategy: Literal[
-        "neutral_response",
-        "credential_decoy",
-        "database_decoy",
-        "expanded_decoy_path",
-    ]
+    selected_strategy: AdaptationStrategy
     reason: str
     observed_actions: list[str]
     observed_decoys: list[str]
@@ -30,7 +33,7 @@ class AdaptationDecision(BaseModel):
 
 class AdaptiveHoneypotService:
     """
-    Deterministic adaptation policy with persistent decision history.
+    Behavior-driven adaptation policy with persistent decision history.
 
     Decisions are simulations only. This service does not change
     real network controls or expose real credentials.
@@ -45,7 +48,7 @@ class AdaptiveHoneypotService:
 
         if history_storage is None:
             database_path = (
-                __import__("pathlib").Path(__file__).resolve().parents[3]
+                Path(__file__).resolve().parents[3]
                 / "data"
                 / "event_ledger.sqlite3"
             )
@@ -70,18 +73,21 @@ class AdaptiveHoneypotService:
         decoys = {event.decoy_id for event in events}
 
         login_attempts = sum(
-            event.action == "attempt_login" for event in events
+            event.action == "attempt_login"
+            for event in events
         )
         database_queries = sum(
-            event.action == "query" for event in events
+            event.action == "query"
+            for event in events
         )
 
+        # Choose a strategy from the actor's accumulated behavior.
         if (
             len(decoys) >= 2
             and login_attempts > 0
             and database_queries > 0
         ):
-            strategy = "expanded_decoy_path"
+            strategy: AdaptationStrategy = "expanded_decoy_path"
             risk_level = "high"
             reason = (
                 "The actor interacted with multiple decoys and performed "
@@ -112,6 +118,27 @@ class AdaptiveHoneypotService:
                 "retain the neutral simulated response."
             )
 
+        # Compare with the previous saved decision for this actor.
+        previous_history = self._history_storage.list_decisions(
+            actor_id=actor_id,
+            limit=1,
+        )
+
+        previous_strategy = None
+        if previous_history:
+            previous_strategy = previous_history[-1].get(
+                "selected_strategy"
+            )
+
+        if (
+            previous_strategy is not None
+            and previous_strategy != strategy
+        ):
+            reason += (
+                f" Strategy changed from {previous_strategy} "
+                f"to {strategy} after reassessing accumulated behavior."
+            )
+
         created_at = datetime.now(timezone.utc)
 
         decision_data = {
@@ -131,17 +158,17 @@ class AdaptiveHoneypotService:
         )
 
         return AdaptationDecision(
-    actor_id=actor_id,
-    event_count=len(events),
-    risk_level=risk_level,
-    selected_strategy=strategy,
-    reason=reason,
-    observed_actions=sorted(actions),
-    observed_decoys=sorted(decoys),
-    simulation_only=True,
-    decision_id=saved_decision["decision_id"],
-    created_at=created_at,
-)
+            actor_id=actor_id,
+            event_count=len(events),
+            risk_level=risk_level,
+            selected_strategy=strategy,
+            reason=reason,
+            observed_actions=sorted(actions),
+            observed_decoys=sorted(decoys),
+            simulation_only=True,
+            decision_id=saved_decision["decision_id"],
+            created_at=created_at,
+        )
 
     def get_decision_history(
         self,
@@ -154,6 +181,6 @@ class AdaptiveHoneypotService:
         )
 
 
-from backend.app.events.store import event_store
+from app.events.store import event_store
 
 adaptive_honeypot_service = AdaptiveHoneypotService(event_store)

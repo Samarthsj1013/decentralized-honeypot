@@ -2,9 +2,9 @@
 import pytest
 from fastapi import HTTPException
 
-from backend.app.adaptation.service import AdaptiveHoneypotService
-from backend.app.events.models import HoneypotEvent
-from backend.app.events.store import EventStore
+from app.adaptation.service import AdaptiveHoneypotService
+from app.events.models import HoneypotEvent
+from app.events.store import EventStore
 
 
 @pytest.fixture

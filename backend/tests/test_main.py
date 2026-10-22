@@ -2,9 +2,9 @@ import pytest
 from fastapi.testclient import TestClient
 from uuid import uuid4
 
-from backend.app.events.store import event_store
-from backend.app.ledger.service import event_ledger
-from backend.app.main import app
+from app.events.store import event_store
+from app.ledger.service import event_ledger
+from app.main import app
 
 client = TestClient(app)
 
@@ -37,13 +37,18 @@ def test_health_endpoint():
 
 def test_list_decoys():
     response = client.get("/api/v1/decoys")
+
     assert response.status_code == 200
+
     decoys = response.json()
-    assert len(decoys) == 3
     decoy_ids = {decoy["decoy_id"] for decoy in decoys}
-    assert "decoy-finance-001" in decoy_ids
-    assert "decoy-credential-001" in decoy_ids
-    assert "decoy-database-001" in decoy_ids
+
+    # The three built-in decoys must always be available.
+    assert {
+        "decoy-finance-001",
+        "decoy-credential-001",
+        "decoy-database-001",
+    }.issubset(decoy_ids)
 
 def test_record_interaction():
     response = record_interaction(
@@ -379,3 +384,67 @@ def test_adaptation_history_limit_is_respected():
         "credential_decoy",
         "expanded_decoy_path",
     ]
+
+
+# Analytics API tests
+
+def test_analytics_summary_is_empty_without_interactions():
+    response = client.get("/api/v1/analytics/summary")
+
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["total_interactions"] == 0
+    assert data["unique_actors"] == 0
+    assert data["action_counts"] == {}
+    assert data["decoy_interaction_counts"] == {}
+    assert data["recent_activity"] == []
+    assert data["simulation_only"] is True
+
+
+def test_analytics_summary_counts_recorded_interactions():
+    actor_id = "analytics-test-actor"
+
+    interaction = record_interaction(
+        actor_id,
+        "decoy-finance-001",
+        "read",
+    )
+    assert interaction.status_code == 201
+
+    response = client.get("/api/v1/analytics/summary")
+
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["total_interactions"] == 1
+    assert data["unique_actors"] == 1
+    assert data["action_counts"]["read"] == 1
+    assert data["decoy_interaction_counts"]["decoy-finance-001"] == 1
+    assert len(data["recent_activity"]) == 1
+    assert data["recent_activity"][0]["actor_id"] == actor_id
+
+
+def test_analytics_summary_respects_recent_limit():
+    interactions = [
+        ("analytics-limit-1", "decoy-finance-001", "read"),
+        ("analytics-limit-2", "decoy-credential-001", "attempt_login"),
+        ("analytics-limit-3", "decoy-database-001", "query"),
+    ]
+
+    for actor_id, decoy_id, action in interactions:
+        response = record_interaction(actor_id, decoy_id, action)
+        assert response.status_code == 201
+
+    response = client.get(
+        "/api/v1/analytics/summary?recent_limit=2"
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["total_interactions"] == 3
+    assert data["unique_actors"] == 3
+    assert len(data["recent_activity"]) == 2
+    assert data["recent_activity"][0]["actor_id"] == "analytics-limit-3"
+    assert data["recent_activity"][1]["actor_id"] == "analytics-limit-2"

@@ -50,6 +50,44 @@ class SQLiteAdaptationStorage:
                 """
             )
 
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS strategy_observations (
+                    actor_id TEXT PRIMARY KEY,
+                    selected_strategy TEXT NOT NULL
+                )
+                """
+            )
+
+    def get_observed_strategy(self, actor_id: str) -> str | None:
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT selected_strategy
+                FROM strategy_observations
+                WHERE actor_id = ?
+                """,
+                (actor_id,),
+            ).fetchone()
+
+        return None if row is None else str(row["selected_strategy"])
+
+    def set_observed_strategy(
+        self,
+        actor_id: str,
+        strategy: str,
+    ) -> None:
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO strategy_observations(actor_id, selected_strategy)
+                VALUES (?, ?)
+                ON CONFLICT(actor_id) DO UPDATE SET
+                    selected_strategy = excluded.selected_strategy
+                """,
+                (actor_id, strategy),
+            )
+
     def append_decision(self, decision: dict[str, Any]) -> dict[str, Any]:
         """Save a decision and return it with its ID and timestamp."""
         with self._lock, self._connect() as connection:

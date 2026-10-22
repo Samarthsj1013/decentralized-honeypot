@@ -1,41 +1,100 @@
-
 from fastapi import APIRouter, HTTPException, Query
 
-from backend.app.adaptation.service import (
+from app.adaptation.service import (
     AdaptationDecision,
     adaptive_honeypot_service,
 )
-from backend.app.events.models import (
+from app.analytics.service import AnalyticsService
+from app.events.models import (
     DecoyAsset,
     HoneypotEvent,
     InteractionRequest,
 )
-from backend.app.events.store import event_store
-from backend.app.honeypot.service import HoneypotService
-from backend.app.intelligence.ml_service import (
+from app.events.store import event_store
+from app.evaluation.models import EvaluationRequest, EvaluationSummary
+from app.evaluation.service import EvaluationService
+from app.evaluation.storage import SQLiteEvaluationStorage
+from app.honeypot.generator import (
+    BehaviorConditionedDecoyGenerator,
+    GeneratedDecoy,
+)
+from app.honeypot.interaction import InteractionWorkflow
+from app.honeypot.registry import generated_decoy_registry
+from app.honeypot.service import HoneypotService
+from app.intelligence.ml_service import (
     MLBehaviorAssessment,
     ml_intelligence_service,
 )
-from backend.app.intelligence.service import (
+from app.intelligence.service import (
     BehavioralFingerprint,
     intelligence_service,
 )
-from backend.app.ledger.checkpoint import (
+from app.ledger.checkpoint import (
     CheckpointVerification,
     SignedCheckpoint,
     checkpoint_service,
 )
-from backend.app.ledger.service import (
+from app.ledger.service import (
     LedgerEntry,
     LedgerVerification,
     event_ledger,
 )
+from app.simulation.models import (
+    SimulationRunRequest,
+    SimulationRunSummary,
+    SimulationScenario,
+)
+from app.simulation.service import AttackSimulationService
+from app.simulation.storage import SQLiteSimulationStorage
 
 router = APIRouter(prefix="/api/v1")
-honeypot_service = HoneypotService(event_store)
+
+honeypot_service = HoneypotService(
+    store=event_store,
+    ledger=event_ledger,
+    registry=generated_decoy_registry,
+)
+
+decoy_generator = BehaviorConditionedDecoyGenerator()
+
+analytics_service = AnalyticsService(
+    store=event_store,
+    history_storage=adaptive_honeypot_service._history_storage,
+)
+
+interaction_workflow = InteractionWorkflow(
+    honeypot=honeypot_service,
+    intelligence=intelligence_service,
+    adaptation=adaptive_honeypot_service,
+    generator=decoy_generator,
+    registry=generated_decoy_registry,
+)
+
+attack_simulation_service = AttackSimulationService(
+    workflow=interaction_workflow,
+    honeypot=honeypot_service,
+    event_store=event_store,
+    intelligence=intelligence_service,
+    adaptation=adaptive_honeypot_service,
+    registry=generated_decoy_registry,
+    storage=SQLiteSimulationStorage(),
+)
+
+evaluation_service = EvaluationService(
+    simulations=attack_simulation_service,
+    storage=SQLiteEvaluationStorage(),
+)
 
 
-@router.get("/decoys", response_model=list[DecoyAsset], tags=["Honeypot"])
+# ---------------------------------------------------------------------
+# Honeypot
+# ---------------------------------------------------------------------
+
+@router.get(
+    "/decoys",
+    response_model=list[DecoyAsset],
+    tags=["Honeypot"],
+)
 async def list_decoys():
     return honeypot_service.list_decoys()
 
@@ -59,15 +118,101 @@ async def record_interaction(
     decoy_id: str,
     request: InteractionRequest,
 ):
-    return honeypot_service.record_interaction(decoy_id, request)
+    return interaction_workflow.record_interaction(decoy_id, request)
 
+
+@router.get(
+    "/simulation/scenarios",
+    response_model=list[SimulationScenario],
+    tags=["Attack Simulation"],
+)
+async def list_simulation_scenarios():
+    return attack_simulation_service.list_scenarios()
+
+
+@router.post(
+    "/simulation/runs",
+    response_model=SimulationRunSummary,
+    status_code=201,
+    tags=["Attack Simulation"],
+)
+async def run_simulation(request: SimulationRunRequest):
+    return attack_simulation_service.run(request)
+
+
+@router.get(
+    "/simulation/runs/{simulation_id}",
+    response_model=SimulationRunSummary,
+    tags=["Attack Simulation"],
+)
+async def get_simulation_run(simulation_id: str):
+    return attack_simulation_service.get_run(simulation_id)
+
+
+@router.post(
+    "/evaluations",
+    response_model=EvaluationSummary,
+    status_code=201,
+    tags=["Simulation Evaluation"],
+)
+def run_evaluation(request: EvaluationRequest):
+    return evaluation_service.run(request)
+
+
+@router.get(
+    "/evaluations/{evaluation_id}",
+    response_model=EvaluationSummary,
+    tags=["Simulation Evaluation"],
+)
+def get_evaluation(evaluation_id: str):
+    return evaluation_service.get_evaluation(evaluation_id)
+
+
+# ---------------------------------------------------------------------
+# Behavior-conditioned decoy generation
+# ---------------------------------------------------------------------
+
+@router.post(
+    "/decoys/generate/{actor_id}",
+    response_model=list[GeneratedDecoy],
+    status_code=200,
+    tags=["Adaptive Honeypot"],
+)
+async def generate_actor_decoys(
+    actor_id: str,
+    limit: int = Query(default=3, ge=1, le=10),
+):
+    fingerprint = intelligence_service.analyze_actor(actor_id)
+
+    if fingerprint is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No recorded events found for this actor",
+        )
+
+    decoys = decoy_generator.generate(
+        fingerprint=fingerprint,
+        limit=limit,
+    )
+
+    saved_decoys = generated_decoy_registry.save_many(decoys)
+    honeypot_service.register_generated_decoys(saved_decoys)
+
+    return saved_decoys
+
+
+# ---------------------------------------------------------------------
+# Events
+# ---------------------------------------------------------------------
 
 @router.get(
     "/events",
     response_model=list[HoneypotEvent],
     tags=["Honeypot"],
 )
-async def list_events(limit: int = Query(default=50, ge=1, le=200)):
+async def list_events(
+    limit: int = Query(default=50, ge=1, le=200),
+):
     return list(reversed(event_store.list_events()[-limit:]))
 
 
@@ -78,10 +223,19 @@ async def list_events(limit: int = Query(default=50, ge=1, le=200)):
 )
 async def get_event(event_id: str):
     event = event_store.get_event(event_id)
+
     if event is None:
-        raise HTTPException(status_code=404, detail="Event not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Event not found",
+        )
+
     return event
 
+
+# ---------------------------------------------------------------------
+# Behavioral threat intelligence
+# ---------------------------------------------------------------------
 
 @router.get(
     "/intelligence/fingerprints",
@@ -99,13 +253,35 @@ async def list_fingerprints():
 )
 async def get_fingerprint(actor_id: str):
     fingerprint = intelligence_service.analyze_actor(actor_id)
+
     if fingerprint is None:
         raise HTTPException(
             status_code=404,
             detail="No recorded events found for this actor",
         )
+
     return fingerprint
 
+
+# ---------------------------------------------------------------------
+# Analytics
+# ---------------------------------------------------------------------
+
+@router.get(
+    "/analytics/summary",
+    tags=["Analytics"],
+)
+async def get_analytics_summary(
+    recent_limit: int = Query(default=10, ge=1, le=100),
+):
+    return analytics_service.get_summary(
+        recent_limit=recent_limit,
+    )
+
+
+# ---------------------------------------------------------------------
+# Machine learning
+# ---------------------------------------------------------------------
 
 @router.get(
     "/intelligence/ml/{actor_id}",
@@ -115,6 +291,10 @@ async def get_fingerprint(actor_id: str):
 async def assess_actor_with_ml(actor_id: str):
     return ml_intelligence_service.analyze_actor(actor_id)
 
+
+# ---------------------------------------------------------------------
+# Adaptive honeypot
+# ---------------------------------------------------------------------
 
 @router.get(
     "/adaptation/{actor_id}",
@@ -139,6 +319,9 @@ async def get_adaptation_history(
     )
 
 
+# ---------------------------------------------------------------------
+# Event ledger
+# ---------------------------------------------------------------------
 
 @router.get(
     "/ledger",
@@ -177,6 +360,10 @@ async def get_ledger_integrity():
     }
 
 
+# ---------------------------------------------------------------------
+# Signed checkpoints
+# ---------------------------------------------------------------------
+
 @router.post(
     "/ledger/checkpoint",
     response_model=SignedCheckpoint,
@@ -199,5 +386,7 @@ async def create_ledger_checkpoint():
     response_model=CheckpointVerification,
     tags=["Signed Checkpoints"],
 )
-async def verify_ledger_checkpoint(checkpoint: SignedCheckpoint):
+async def verify_ledger_checkpoint(
+    checkpoint: SignedCheckpoint,
+):
     return checkpoint_service.verify_checkpoint(checkpoint)

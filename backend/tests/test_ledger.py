@@ -1,8 +1,8 @@
 
 from datetime import datetime, timezone
 
-from backend.app.events.models import HoneypotEvent
-from backend.app.ledger.service import EventLedger, GENESIS_HASH
+from app.events.models import HoneypotEvent
+from app.ledger.service import EventLedger, GENESIS_HASH
 
 
 def make_event(event_id: str, actor_id: str = "simulator-ledger"):

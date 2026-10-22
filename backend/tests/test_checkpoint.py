@@ -1,10 +1,12 @@
 
+import json
+import sqlite3
 from datetime import datetime, timezone
 
-from backend.app.events.models import HoneypotEvent
-from backend.app.ledger.checkpoint import LedgerCheckpointService
-from backend.app.ledger.service import EventLedger
-from backend.app.ledger.storage import SQLiteLedgerStorage
+from app.events.models import HoneypotEvent
+from app.ledger.checkpoint import LedgerCheckpointService
+from app.ledger.service import EventLedger
+from app.ledger.storage import SQLiteLedgerStorage
 
 
 def create_test_service(tmp_path):
@@ -57,6 +59,52 @@ def test_modified_checkpoint_signature_is_rejected(tmp_path):
 
     assert result.valid is False
     assert result.signature_valid is False
+
+
+def test_checkpoint_rejects_tampered_persisted_ledger_payload(tmp_path):
+    database_path = tmp_path / "test_ledger.sqlite3"
+    storage = SQLiteLedgerStorage(database_path)
+    ledger = EventLedger(storage=storage)
+    service = LedgerCheckpointService(
+        ledger=ledger,
+        private_key_path=tmp_path / "test_private.pem",
+        public_key_path=tmp_path / "test_public.pem",
+    )
+    ledger.append(create_event("tampered-checkpoint-event-001"))
+
+    checkpoint = service.create_checkpoint()
+    before = service.verify_checkpoint(checkpoint)
+    assert before.valid is True
+    assert before.signature_valid is True
+    assert before.ledger_matches is True
+    assert before.ledger_integrity_valid is True
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            "SELECT event_data FROM ledger_entries WHERE sequence = 1"
+        ).fetchone()
+        event_data = json.loads(row[0])
+        event_data["actor_id"] = "tampered-actor"
+        connection.execute(
+            "UPDATE ledger_entries SET event_data = ? WHERE sequence = 1",
+            (
+                json.dumps(
+                    event_data,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ),
+            ),
+        )
+
+    after = service.verify_checkpoint(checkpoint)
+
+    assert after.valid is False
+    assert after.signature_valid is True
+    assert after.ledger_matches is True
+    assert after.ledger_integrity_valid is False
+    assert after.first_invalid_sequence == 1
+    assert "Ledger integrity verification failed at sequence 1" in after.message
 
 
 def test_old_checkpoint_does_not_match_new_ledger_head(tmp_path):

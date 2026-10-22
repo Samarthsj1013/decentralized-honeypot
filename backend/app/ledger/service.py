@@ -7,8 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from backend.app.events.models import HoneypotEvent
-from backend.app.ledger.storage import SQLiteLedgerStorage
+from app.events.models import HoneypotEvent
+from app.ledger.storage import SQLiteLedgerStorage
 
 
 GENESIS_HASH = "0" * 64
@@ -142,55 +142,83 @@ class EventLedger:
 
     def verify_chain(self) -> LedgerVerification:
         with self._lock:
-            previous_hash = GENESIS_HASH
+            return self._verify_entries(self._entries)
 
-            for index, entry in enumerate(self._entries, start=1):
-                if entry.sequence != index:
-                    return LedgerVerification(
-                        valid=False,
-                        entries_checked=index - 1,
-                        first_invalid_sequence=index,
-                        message="Ledger sequence is invalid.",
-                    )
+    def verify_persisted_chain(self) -> LedgerVerification:
+        """Reload and verify persisted rows, including external DB changes."""
+        with self._lock:
+            if self._storage is None:
+                return self._verify_entries(self._entries)
 
-                if entry.ledger_version != LEDGER_VERSION:
-                    return LedgerVerification(
-                        valid=False,
-                        entries_checked=index - 1,
-                        first_invalid_sequence=index,
-                        message="Ledger version is invalid or unsupported.",
-                    )
-
-                if entry.previous_hash != previous_hash:
-                    return LedgerVerification(
-                        valid=False,
-                        entries_checked=index - 1,
-                        first_invalid_sequence=index,
-                        message="Previous-hash link is invalid.",
-                    )
-
-                expected_hash = self._calculate_hash(
-                    entry.sequence,
-                    entry.event_id,
-                    entry.event_data,
-                    entry.previous_hash,
+            try:
+                entries = [
+                    LedgerEntry.model_validate(entry)
+                    for entry in self._storage.load_entries()
+                ]
+            except Exception:
+                return LedgerVerification(
+                    valid=False,
+                    entries_checked=0,
+                    message="Persisted ledger entries could not be loaded.",
                 )
 
-                if entry.entry_hash != expected_hash:
-                    return LedgerVerification(
-                        valid=False,
-                        entries_checked=index - 1,
-                        first_invalid_sequence=index,
-                        message="Entry hash does not match its contents.",
-                    )
+            self._entries = entries
+            return self._verify_entries(self._entries)
 
-                previous_hash = entry.entry_hash
+    @classmethod
+    def _verify_entries(
+        cls,
+        entries: list[LedgerEntry],
+    ) -> LedgerVerification:
+        previous_hash = GENESIS_HASH
 
-            return LedgerVerification(
-                valid=True,
-                entries_checked=len(self._entries),
-                message="All ledger entries and hash links are valid.",
+        for index, entry in enumerate(entries, start=1):
+            if entry.sequence != index:
+                return LedgerVerification(
+                    valid=False,
+                    entries_checked=index - 1,
+                    first_invalid_sequence=index,
+                    message="Ledger sequence is invalid.",
+                )
+
+            if entry.ledger_version != LEDGER_VERSION:
+                return LedgerVerification(
+                    valid=False,
+                    entries_checked=index - 1,
+                    first_invalid_sequence=index,
+                    message="Ledger version is invalid or unsupported.",
+                )
+
+            if entry.previous_hash != previous_hash:
+                return LedgerVerification(
+                    valid=False,
+                    entries_checked=index - 1,
+                    first_invalid_sequence=index,
+                    message="Previous-hash link is invalid.",
+                )
+
+            expected_hash = cls._calculate_hash(
+                entry.sequence,
+                entry.event_id,
+                entry.event_data,
+                entry.previous_hash,
             )
+
+            if entry.entry_hash != expected_hash:
+                return LedgerVerification(
+                    valid=False,
+                    entries_checked=index - 1,
+                    first_invalid_sequence=index,
+                    message="Entry hash does not match its contents.",
+                )
+
+            previous_hash = entry.entry_hash
+
+        return LedgerVerification(
+            valid=True,
+            entries_checked=len(entries),
+            message="All ledger entries and hash links are valid.",
+        )
 
     def clear(self) -> None:
         with self._lock:

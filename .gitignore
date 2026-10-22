@@ -13,3 +13,15 @@ coverage/
 experiments/results/*
 !experiments/results/.gitkeep
 backend/data/
+# Local application databases
+data/
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Private signing keys
+*_private.pem
+
+# Local backend database and signing-key files
+backend/data/

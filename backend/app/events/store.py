@@ -1,7 +1,7 @@
 
 from threading import Lock
 
-from backend.app.events.models import HoneypotEvent
+from app.events.models import HoneypotEvent
 
 
 class EventStore:
@@ -13,6 +13,9 @@ class EventStore:
 
     def add_event(self, event: HoneypotEvent) -> HoneypotEvent:
         with self._lock:
+            for existing in self._events:
+                if existing.event_id == event.event_id:
+                    return existing
             self._events.append(event)
         return event
     def add(self, event: HoneypotEvent) -> HoneypotEvent:

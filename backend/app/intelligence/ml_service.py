@@ -7,8 +7,8 @@ import pandas as pd
 from fastapi import HTTPException, status
 from pydantic import BaseModel
 
-from backend.app.events.models import HoneypotEvent
-from backend.app.events.store import EventStore
+from app.events.models import HoneypotEvent
+from app.events.store import EventStore
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -172,6 +172,6 @@ class MLIntelligenceService:
         )
 
 
-from backend.app.events.store import event_store
+from app.events.store import event_store
 
 ml_intelligence_service = MLIntelligenceService(event_store)

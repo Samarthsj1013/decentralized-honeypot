@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 from pydantic import BaseModel
 
-from backend.app.ledger.service import EventLedger, event_ledger
+from app.ledger.service import EventLedger, event_ledger
 
 
 class SignedCheckpoint(BaseModel):
@@ -31,7 +31,9 @@ class CheckpointVerification(BaseModel):
     valid: bool
     signature_valid: bool
     ledger_matches: bool
+    ledger_integrity_valid: bool
     message: str
+    first_invalid_sequence: int | None = None
 
 
 class LedgerCheckpointService:
@@ -182,6 +184,7 @@ class LedgerCheckpointService:
         except (InvalidSignature, ValueError, TypeError):
             signature_valid = False
 
+        integrity = self._ledger.verify_persisted_chain()
         entries = self._ledger.list_entries()
 
         if entries:
@@ -196,10 +199,25 @@ class LedgerCheckpointService:
             and checkpoint.head_hash == current_head_hash
         )
 
-        valid = signature_valid and ledger_matches
+        valid = (
+            signature_valid
+            and ledger_matches
+            and integrity.valid
+        )
 
         if not signature_valid:
             message = "Checkpoint signature is invalid."
+        elif not integrity.valid:
+            if integrity.first_invalid_sequence is None:
+                message = (
+                    "Ledger integrity verification failed: "
+                    f"{integrity.message}"
+                )
+            else:
+                message = (
+                    "Ledger integrity verification failed at sequence "
+                    f"{integrity.first_invalid_sequence}: {integrity.message}"
+                )
         elif not ledger_matches:
             message = "Checkpoint does not match the current ledger head."
         else:
@@ -209,6 +227,8 @@ class LedgerCheckpointService:
             valid=valid,
             signature_valid=signature_valid,
             ledger_matches=ledger_matches,
+            ledger_integrity_valid=integrity.valid,
+            first_invalid_sequence=integrity.first_invalid_sequence,
             message=message,
         )
 
