@@ -250,6 +250,184 @@ def test_failed_evaluation_stays_inactive_and_cannot_activate(tmp_path):
         service.activate(record.record_id)
 
 
+@pytest.mark.parametrize(
+    "failure_case",
+    [
+        "partial",
+        "failed_run",
+        "incomplete_run",
+        "missing_run_summary",
+        "unrecorded_interaction",
+        "bundle_validation_failure",
+        "missing_bundle_measurement",
+        "unvalidated_generated_bundle",
+        "negative_strategy_count",
+        "malformed_strategy_counts",
+        "inconsistent_completion_rate",
+        "inconsistent_recording_rate",
+        "inconsistent_interaction_aggregate",
+        "inconsistent_strategy_aggregate",
+    ],
+)
+def test_evaluation_acceptance_fails_closed_on_incomplete_or_invalid_results(
+    tmp_path, failure_case
+):
+    from app.evaluation.models import EvaluationMetrics
+    from app.honeypot.bundles import BundleValidationIssue, BundleValidationResult
+
+    injected_bundle_ids = []
+
+    def evaluation_runner(record):
+        result = StrategySharingService._isolated_evaluate(record)
+        overall = result.overall
+        if failure_case == "partial":
+            return result.model_copy(update={"status": "partial"})
+        if failure_case == "failed_run":
+            overall = overall.model_copy(
+                update={
+                    "failed_runs": 1,
+                    "completed_runs": overall.completed_runs - 1,
+                    "errors": 1,
+                }
+            )
+        elif failure_case == "incomplete_run":
+            overall = overall.model_copy(
+                update={
+                    "incomplete_runs": 1,
+                    "completed_runs": overall.completed_runs - 1,
+                }
+            )
+        elif failure_case == "missing_run_summary":
+            overall = overall.model_copy(
+                update={"runs_with_summary": overall.runs_with_summary - 1}
+            )
+        elif failure_case == "unrecorded_interaction":
+            overall = overall.model_copy(
+                update={"interactions_recorded": overall.interactions_recorded - 1}
+            )
+        elif failure_case == "bundle_validation_failure":
+            bundle_run = next(
+                run
+                for run in result.runs
+                if run.simulation_summary is not None
+                and run.simulation_summary.bundle_ids
+            )
+            assert bundle_run.simulation_summary is not None
+            generated_bundle_id = bundle_run.simulation_summary.bundle_ids[0]
+            injected_bundle_ids.append(generated_bundle_id)
+            failed_result = BundleValidationResult(
+                bundle_id=generated_bundle_id,
+                schema_version=1,
+                valid=False,
+                issues=[BundleValidationIssue(code="test", message="invalid bundle")],
+            )
+            run_summary = bundle_run.simulation_summary.model_copy(
+                update={
+                    "bundle_validation_results": [
+                        validation
+                        for validation in bundle_run.simulation_summary.bundle_validation_results
+                        if validation.bundle_id != generated_bundle_id
+                    ]
+                    + [failed_result]
+                }
+            )
+            runs = [
+                run.model_copy(update={"simulation_summary": run_summary})
+                if run is bundle_run
+                else run
+                for run in result.runs
+            ]
+            overall = overall.model_copy(
+                update={"bundle_validation_failures": 1}
+            )
+            result = result.model_copy(update={"runs": runs})
+        elif failure_case == "missing_bundle_measurement":
+            # Older summary payloads may omit this defaulted field. Parsing
+            # supplies zero, but the field-set check must treat it as unknown.
+            metrics_data = overall.model_dump()
+            metrics_data.pop("bundle_validation_failures")
+            overall = EvaluationMetrics.model_validate(metrics_data)
+        elif failure_case == "unvalidated_generated_bundle":
+            overall = overall.model_copy(
+                update={"validated_bundles": overall.validated_bundles - 1}
+            )
+        elif failure_case == "negative_strategy_count":
+            overall = overall.model_copy(
+                update={
+                    "strategy_selection_counts": {
+                        record.strategy: 1,
+                        "other_strategy": -1,
+                    }
+                }
+            )
+        elif failure_case == "malformed_strategy_counts":
+            overall = overall.model_copy(
+                update={
+                    "strategy_selection_counts": {
+                        "": 1,
+                        record.strategy: 1,
+                    }
+                }
+            )
+        elif failure_case == "inconsistent_completion_rate":
+            overall = overall.model_copy(update={"completion_rate": 0.5})
+        elif failure_case == "inconsistent_recording_rate":
+            overall = overall.model_copy(update={"event_recording_rate": 0.5})
+        elif failure_case == "inconsistent_interaction_aggregate":
+            first_run = result.runs[0]
+            assert first_run.simulation_summary is not None
+            changed_summary = first_run.simulation_summary.model_copy(
+                update={
+                    "interactions_recorded": (
+                        first_run.simulation_summary.interactions_recorded - 1
+                    )
+                }
+            )
+            result = result.model_copy(
+                update={
+                    "runs": [
+                        first_run.model_copy(
+                            update={"simulation_summary": changed_summary}
+                        ),
+                        *result.runs[1:],
+                    ]
+                }
+            )
+        elif failure_case == "inconsistent_strategy_aggregate":
+            strategy_counts = dict(overall.strategy_selection_counts)
+            strategy_counts[record.strategy] += 1
+            overall = overall.model_copy(
+                update={"strategy_selection_counts": strategy_counts}
+            )
+
+        return result.model_copy(update={"overall": overall})
+
+    service, _ = make_service(tmp_path, evaluation_runner=evaluation_runner)
+    record = signed_record(service)
+    service.import_record(record.model_dump(mode="json"))
+
+    outcome = service.evaluate(record.record_id)
+
+    assert outcome.state == "evaluation_failed"
+    assert outcome.evaluation is not None
+    assert outcome.evaluation_passed is False
+    if failure_case == "bundle_validation_failure":
+        assert outcome.evaluation.status == "completed"
+        assert outcome.evaluation.overall.bundle_validation_failures == 1
+        assert outcome.evaluation.runs == []
+        stored_evaluation = json.loads(
+            service.storage.get(record.record_id)["evaluation_json"]
+        )
+        assert any(
+            validation["bundle_id"] == injected_bundle_ids[0]
+            and validation["valid"] is False
+            for run in stored_evaluation["runs"]
+            for validation in run["simulation_summary"]["bundle_validation_results"]
+        )
+    with pytest.raises(HTTPException, match="passing local evaluation"):
+        service.activate(record.record_id)
+
+
 def test_evaluation_exception_is_audited_without_fabricated_metrics(tmp_path):
     service, _ = make_service(tmp_path, evaluation_runner=lambda _record: (_ for _ in ()).throw(RuntimeError("temporary failure")))
     record = signed_record(service)

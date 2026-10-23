@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import gc
 import json
+import math
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -291,8 +292,135 @@ class StrategySharingService:
         self._verify_record(record)
         try:
             result = self.evaluation_runner(record)
-            target_count = result.overall.strategy_selection_counts.get(record.strategy, 0)
-            passed = result.status == "completed" and result.overall.failed_runs == 0 and target_count > 0
+            overall = result.overall
+            required_counts = (
+                "runs_requested",
+                "runs_with_summary",
+                "completed_runs",
+                "incomplete_runs",
+                "failed_runs",
+                "interactions_attempted",
+                "interactions_recorded",
+                "errors",
+                "bundles_generated",
+                "validated_bundles",
+                "bundle_validation_failures",
+            )
+            # Some metrics have model defaults for compatibility with older
+            # persisted summaries. A defaulted value is not evidence that the
+            # evaluator measured it, so require explicit presence and valid
+            # non-negative integer counts before accepting the result.
+            counts_available = all(
+                name in overall.model_fields_set
+                and type(getattr(overall, name, None)) is int
+                and getattr(overall, name) >= 0
+                for name in required_counts
+            )
+            strategy_counts = overall.strategy_selection_counts
+            strategy_counts_valid = (
+                isinstance(strategy_counts, dict)
+                and all(
+                    isinstance(name, str)
+                    and bool(name)
+                    and type(count) is int
+                    and count >= 0
+                    for name, count in strategy_counts.items()
+                )
+            )
+            target_count = (
+                strategy_counts.get(record.strategy)
+                if strategy_counts_valid
+                else None
+            )
+            rates_available = all(
+                name in overall.model_fields_set
+                and type(getattr(overall, name, None)) in (int, float)
+                and math.isfinite(getattr(overall, name))
+                and 0 <= getattr(overall, name) <= 1
+                for name in ("completion_rate", "event_recording_rate")
+            )
+            runs = result.runs
+            summaries = [
+                run.simulation_summary
+                for run in runs
+                if run.simulation_summary is not None
+            ]
+            observed_strategy_counts: dict[str, int] = {}
+            for summary in summaries:
+                observed_strategies = summary.observed_strategies or (
+                    [summary.final_adaptation_strategy]
+                    if summary.final_adaptation_strategy is not None
+                    else []
+                )
+                for strategy in observed_strategies:
+                    observed_strategy_counts[strategy] = (
+                        observed_strategy_counts.get(strategy, 0) + 1
+                    )
+            generated_bundle_ids = [
+                bundle_id
+                for summary in summaries
+                for bundle_id in summary.bundle_ids
+            ]
+            bundle_validations = [
+                validation
+                for summary in summaries
+                for validation in summary.bundle_validation_results
+            ]
+            validation_bundle_ids = [
+                validation.bundle_id for validation in bundle_validations
+            ]
+            runs_consistent = (
+                len(runs) == overall.runs_requested
+                and len(summaries) == overall.runs_with_summary
+                and sum(run.status == "completed" for run in runs)
+                == overall.completed_runs
+                and sum(run.status == "incomplete" for run in runs)
+                == overall.incomplete_runs
+                and sum(run.status == "failed" for run in runs)
+                == overall.failed_runs
+                and sum(summary.interactions_attempted for summary in summaries)
+                == overall.interactions_attempted
+                and sum(summary.interactions_recorded for summary in summaries)
+                == overall.interactions_recorded
+                and sum(len(summary.errors) for summary in summaries)
+                + overall.failed_runs
+                == overall.errors
+                and observed_strategy_counts == strategy_counts
+                and len(generated_bundle_ids) == len(set(generated_bundle_ids))
+                and len(validation_bundle_ids) == len(set(validation_bundle_ids))
+                and set(generated_bundle_ids) == set(validation_bundle_ids)
+                and sum(validation.valid for validation in bundle_validations)
+                == overall.validated_bundles
+                and sum(not validation.valid for validation in bundle_validations)
+                == overall.bundle_validation_failures
+            )
+            passed = (
+                result.status == "completed"
+                and counts_available
+                and rates_available
+                and runs_consistent
+                and overall.runs_requested > 0
+                and overall.runs_with_summary == overall.runs_requested
+                and overall.completed_runs == overall.runs_requested
+                and overall.incomplete_runs == 0
+                and overall.failed_runs == 0
+                and overall.errors == 0
+                and overall.completion_rate
+                == round(overall.completed_runs / overall.runs_requested, 6)
+                and overall.interactions_attempted > 0
+                and overall.interactions_recorded == overall.interactions_attempted
+                and math.isclose(
+                    overall.event_recording_rate,
+                    overall.interactions_recorded / overall.interactions_attempted,
+                    abs_tol=1e-9,
+                )
+                and overall.validated_bundles + overall.bundle_validation_failures
+                == overall.bundles_generated
+                and overall.bundle_validation_failures == 0
+                and strategy_counts_valid
+                and type(target_count) is int
+                and target_count > 0
+            )
         except Exception as exc:
             # A real result object is required for audit; evaluation exceptions are not converted into fabricated metrics.
             self.storage.set_evaluation_failure(record_id)
