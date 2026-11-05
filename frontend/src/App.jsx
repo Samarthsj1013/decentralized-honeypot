@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { API_BASE_URL, getEvaluation, getScenarios, runEvaluation } from "./api.js";
+import { API_BASE_URL, getEvaluation, getScenarios, getTelemetryAlerts, openTelemetryStream, runEvaluation } from "./api.js";
 import {
   formatLatency,
   formatPercent,
   formatRatio,
   getScenarioMetricRows,
   getStrategyTimeline,
+  prependUnique,
   scenarioShortName,
 } from "./dashboard-data.js";
 
@@ -233,6 +234,40 @@ function RunDetails({ evaluation }) {
   );
 }
 
+function LiveTelemetryPanel({ events, alerts, status }) {
+  const statusLabel = status === "connected" ? "Live" : status === "reconnecting" ? "Reconnecting" : "Connecting";
+  return (
+    <section className="panel live-telemetry-panel" aria-label="Live telemetry and alerts">
+      <div className="section-heading">
+        <div><span className="eyebrow">LIVE SECURITY FEED</span><h2>Telemetry &amp; alerts</h2><p>Normalized event summaries update while the dashboard is open.</p></div>
+        <span className={`live-status live-${status}`}><span className="status-dot" />{statusLabel}</span>
+      </div>
+      <div className="live-feed-grid">
+        <div className="live-feed-column">
+          <h3>Recent events <span>{events.length}</span></h3>
+          {events.length === 0 ? <p className="live-empty">Waiting for recorded events.</p> : <ul className="live-event-list">
+            {events.map((event) => <li key={event.event_id}>
+              <span className={`severity-dot severity-${event.severity}`} />
+              <div><strong>{event.telemetry_event_type || event.action}</strong><small>{event.source_system || event.source} · {new Date(event.timestamp).toLocaleTimeString()}</small></div>
+              <span className="live-severity">{event.severity}</span>
+            </li>)}
+          </ul>}
+        </div>
+        <div className="live-feed-column alert-feed-column">
+          <h3>Suspicious activity <span>{alerts.length}</span></h3>
+          {alerts.length === 0 ? <p className="live-empty">No rule-based alerts in the current feed.</p> : <ul className="live-event-list">
+            {alerts.map((alert) => <li key={alert.alert_id}>
+              <span className={`severity-dot severity-${alert.severity}`} />
+              <div><strong>{alert.event_type}</strong><small>{alert.message}</small></div>
+              <span className="live-severity">{alert.severity}</span>
+            </li>)}
+          </ul>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const [scenarios, setScenarios] = useState([]);
   const [connection, setConnection] = useState("checking");
@@ -246,6 +281,9 @@ export default function App() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [liveEvents, setLiveEvents] = useState([]);
+  const [liveAlerts, setLiveAlerts] = useState([]);
+  const [liveStatus, setLiveStatus] = useState("connecting");
   const scenarioRows = useMemo(() => getScenarioMetricRows(evaluation), [evaluation]);
   const timelineRows = useMemo(() => getStrategyTimeline(evaluation), [evaluation]);
   const overall = evaluation?.overall;
@@ -265,6 +303,22 @@ export default function App() {
   }
 
   useEffect(() => { checkConnection(); }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    getTelemetryAlerts().then((alerts) => {
+      if (mounted) setLiveAlerts(alerts);
+    }).catch(() => {});
+    const stream = openTelemetryStream({
+      onEvent: (event) => mounted && setLiveEvents((current) => prependUnique(current, event, "event_id")),
+      onAlert: (alert) => mounted && setLiveAlerts((current) => prependUnique(current, alert, "alert_id")),
+      onStatus: (status) => mounted && setLiveStatus(status),
+    });
+    return () => {
+      mounted = false;
+      stream.close();
+    };
+  }, []);
 
   async function refresh() {
     setError("");
@@ -378,6 +432,8 @@ export default function App() {
 
           {error && <div className="alert alert-error" role="alert"><strong>Request failed</strong><span>{error}</span><button onClick={() => setError("")} aria-label="Dismiss error">×</button></div>}
           {notice && <div className="alert alert-success" role="status"><span>{notice}</span><button onClick={() => setNotice("")} aria-label="Dismiss message">×</button></div>}
+
+          <LiveTelemetryPanel events={liveEvents} alerts={liveAlerts} status={liveStatus} />
 
           <section className="control-grid" aria-label="Evaluation controls">
             <form className="panel launch-panel" onSubmit={submitEvaluation}>

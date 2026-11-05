@@ -1,4 +1,11 @@
-from fastapi import APIRouter, HTTPException, Query
+import asyncio
+import hmac
+import json
+import os
+
+from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 
 from app.adaptation.service import (
     AdaptationDecision,
@@ -9,6 +16,7 @@ from app.events.models import (
     DecoyAsset,
     HoneypotEvent,
     InteractionRequest,
+    TelemetryIngestRequest,
 )
 from app.events.store import event_store
 from app.evaluation.models import EvaluationRequest, EvaluationSummary
@@ -67,6 +75,10 @@ from app.strategy_sharing import (
     StrategyShareRecord,
     strategy_sharing_service,
 )
+from app.telemetry.alerts import TelemetryAlertService
+from app.telemetry.live import LiveUpdateHub
+from app.telemetry.models import TelemetryAlert, TelemetryIngestResponse, live_summary
+from app.telemetry.service import MAX_TELEMETRY_BODY_BYTES, TelemetryIngestionService
 
 router = APIRouter(prefix="/api/v1")
 
@@ -110,6 +122,196 @@ evaluation_service = EvaluationService(
     simulations=attack_simulation_service,
     storage=SQLiteEvaluationStorage(),
 )
+
+telemetry_ingestion_service = TelemetryIngestionService(event_store, event_ledger)
+telemetry_alert_service = TelemetryAlertService()
+live_update_hub = LiveUpdateHub()
+
+
+def _on_event_recorded(event: HoneypotEvent) -> None:
+    live_update_hub.publish_event(event)
+    alert = telemetry_alert_service.inspect(event)
+    if alert is not None:
+        live_update_hub.publish_alert(alert)
+
+
+event_store.subscribe(_on_event_recorded)
+
+
+def _bearer_token(authorization: str | None) -> str | None:
+    if authorization is None:
+        return None
+    scheme, separator, token = authorization.partition(" ")
+    if not separator or scheme.casefold() != "bearer" or not token or " " in token:
+        return None
+    return token
+
+
+def _reject_json_constant(value: str):
+    raise ValueError(f"Invalid JSON constant: {value}")
+
+
+async def _bounded_request_body(request: Request) -> bytes:
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > MAX_TELEMETRY_BODY_BYTES:
+                raise HTTPException(413, "Telemetry request body is too large")
+        except ValueError as exc:
+            raise HTTPException(400, "Invalid Content-Length header") from exc
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_TELEMETRY_BODY_BYTES:
+            raise HTTPException(413, "Telemetry request body is too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+@router.post(
+    "/telemetry/ingest",
+    response_model=TelemetryIngestResponse,
+    status_code=201,
+    tags=["Live Telemetry"],
+    summary="Ingest a normalized external telemetry event",
+    description=(
+        "Requires a configured bearer token. JSON is treated as inert data; "
+        "requests are limited to 32 KiB and deduplicated by source, sensor, "
+        "and external event ID."
+    ),
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": TelemetryIngestRequest.model_json_schema(),
+                }
+            },
+        }
+    },
+)
+async def ingest_telemetry(
+    request: Request,
+    response: Response,
+    authorization: str | None = Header(default=None),
+):
+    configured_token = os.getenv("HONEYPOT_TELEMETRY_INGEST_TOKEN", "")
+    if len(configured_token.encode("utf-8")) < 32:
+        raise HTTPException(
+            503,
+            "External telemetry ingestion requires a configured token of at least 32 bytes",
+        )
+    supplied_token = _bearer_token(authorization)
+    if supplied_token is None or not hmac.compare_digest(
+        supplied_token.encode("utf-8"), configured_token.encode("utf-8")
+    ):
+        raise HTTPException(
+            401,
+            "A valid telemetry bearer token is required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    raw_body = await _bounded_request_body(request)
+    try:
+        payload_data = json.loads(raw_body, parse_constant=_reject_json_constant)
+    except (ValueError, RecursionError):
+        raise HTTPException(400, "Malformed JSON telemetry document") from None
+    if not isinstance(payload_data, dict):
+        raise HTTPException(422, "Telemetry payload must be a JSON object")
+    try:
+        payload = TelemetryIngestRequest.model_validate(payload_data)
+    except ValidationError as exc:
+        safe_errors = [
+            {"loc": error["loc"], "msg": error["msg"], "type": error["type"]}
+            for error in exc.errors()
+        ]
+        raise HTTPException(422, safe_errors) from None
+
+    event, created = telemetry_ingestion_service.ingest(payload)
+    alert = telemetry_alert_service.get_for_event(event.event_id)
+    response.status_code = 201 if created else 200
+    return TelemetryIngestResponse(
+        accepted=True,
+        duplicate=not created,
+        event=event,
+        alert=alert,
+    )
+
+
+@router.get(
+    "/telemetry/alerts",
+    response_model=list[TelemetryAlert],
+    tags=["Live Telemetry"],
+)
+async def list_telemetry_alerts(limit: int = Query(default=50, ge=1, le=100)):
+    return telemetry_alert_service.list_alerts(limit)
+
+
+@router.get(
+    "/telemetry/stream",
+    tags=["Live Telemetry"],
+    summary="Stream recent events and alerts using SSE",
+    response_class=StreamingResponse,
+)
+async def stream_live_updates(
+    request: Request,
+    after_event_id: str | None = Query(default=None, max_length=80),
+):
+    async def generate():
+        subscriber_id, queue = live_update_hub.subscribe()
+        emitted: set[str] = set()
+        cursor = request.headers.get("last-event-id") or after_event_id
+        if cursor and cursor.startswith("alert-"):
+            cursor = "external-" + cursor.removeprefix("alert-")
+        try:
+            yield "retry: 3000\n\n"
+            snapshot = event_store.list_events()
+            start_index = -1
+            if cursor:
+                start_index = next(
+                    (index for index, event in enumerate(snapshot) if event.event_id == cursor),
+                    max(-1, len(snapshot) - 21),
+                )
+            else:
+                start_index = max(-1, len(snapshot) - 21)
+            for event in snapshot[start_index + 1:]:
+                message = {
+                    "kind": "event",
+                    "id": event.event_id,
+                    "data": live_summary(event).model_dump(mode="json"),
+                }
+                emitted.add(f"event:{message['id']}")
+                yield live_update_hub.encode(message)
+                alert = telemetry_alert_service.get_for_event(event.event_id)
+                if alert is not None:
+                    alert_message = {
+                        "kind": "alert",
+                        "id": alert.alert_id,
+                        "data": alert.model_dump(mode="json"),
+                    }
+                    emitted.add(f"alert:{alert.alert_id}")
+                    yield live_update_hub.encode(alert_message)
+
+            while not await request.is_disconnected():
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+                    continue
+                key = f"{message['kind']}:{message['id']}"
+                if key in emitted:
+                    continue
+                emitted.add(key)
+                yield live_update_hub.encode(message)
+        finally:
+            live_update_hub.unsubscribe(subscriber_id)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/strategy-sharing/exports/{actor_id}", response_model=StrategyShareRecord, tags=["Strategy Sharing"])

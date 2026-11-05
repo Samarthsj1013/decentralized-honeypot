@@ -129,6 +129,109 @@ fingerprint version, and the remaining modeled entity fields. The independent
 validator reports schema, identifier, reference, and cross-asset consistency
 issues; successful validation means internal synthetic-data consistency only.
 
+## Live telemetry ingestion and alerting
+
+The external ingestion endpoint accepts a bounded, normalized JSON envelope
+and treats its contents only as data. It does not execute fields, commands, or
+network actions. The request is limited to 32 KiB, rejects unknown fields,
+requires timezone-aware timestamps, constrains network fields, and bounds
+arbitrary JSON `attributes` by size, depth, and value count.
+
+External ingestion is disabled until a bearer token is configured. Keep the
+token out of source control and set it in the same PowerShell session used to
+start the local backend:
+
+```powershell
+$env:HONEYPOT_TELEMETRY_INGEST_TOKEN = "replace-with-a-long-random-local-token"
+python -m uvicorn app.main:app --reload --app-dir backend
+```
+
+`POST /api/v1/telemetry/ingest` requires `Authorization: Bearer <token>`. The
+normalized envelope uses `source_system` (`generic`, `zeek`, or `suricata`),
+`sensor_id`, `external_event_id`, `occurred_at`, `event_type`, and optional
+severity, IP/port/protocol fields, and JSON `attributes`. For example:
+
+```powershell
+$headers = @{ Authorization = "Bearer $env:HONEYPOT_TELEMETRY_INGEST_TOKEN" }
+$event = @{
+  source_system = "generic"
+  sensor_id = "lab-sensor-01"
+  external_event_id = "event-0001"
+  occurred_at = "2026-11-02T12:00:00Z"
+  event_type = "port_scan_detected"
+  severity = "high"
+  source_ip = "192.0.2.15"
+  destination_ip = "198.51.100.9"
+  protocol = "tcp"
+  attributes = @{ count = 12 }
+} | ConvertTo-Json -Depth 6
+Invoke-RestMethod -Method Post `
+  -Uri "http://127.0.0.1:8000/api/v1/telemetry/ingest" `
+  -Headers $headers -ContentType "application/json" -Body $event
+```
+
+An initial accepted event returns HTTP 201; an exact replay returns HTTP 200
+with `duplicate: true`, and reuse of the same sensor/event ID with changed
+contents returns HTTP 409. Event IDs are derived deterministically from the
+source system, sensor ID, and external event ID. Accepted events are marked
+`source: external`, stored in the existing event store, and appended to the
+existing hash-chain ledger. At startup, the event store is rehydrated from the
+ledger, allowing deduplication to survive process restarts.
+
+Alerts use a small deterministic rule set: high/critical severity or selected
+suspicious event-type markers create an alert. This is triage plumbing, not a
+trained detector or an effectiveness claim. Read current alerts from
+`GET /api/v1/telemetry/alerts?limit=30`. `GET /api/v1/telemetry/stream` is an
+SSE feed that sends recent event summaries and subsequent event/alert updates;
+the live projection omits raw attributes and IP addresses. Alerts and SSE
+subscriber queues are in-memory and bounded, so alerts are rebuilt from
+restored external events at process startup and live clients may miss updates
+if a queue overflows while disconnected.
+
+The `suricata` value currently identifies the source of an already normalized
+event; a native Suricata parser is not included. A standalone Zeek `conn.log`
+adapter is available as `python -m app.telemetry.zeek_cli`. It reads Zeek TSV
+using `#separator`, `#fields`, `#types`, `#unset_field`, and `#empty_field`
+directives, and also accepts newline-delimited Zeek JSON. It maps `uid` to the
+external event ID (or a stable record digest if `uid` is absent), endpoints and
+protocol to normalized network fields, and service/state/duration/byte counts
+to attributes. Missing Zeek values remain absent. This is a file adapter only;
+it does not install or configure Zeek and does not provide a Zeek agent.
+
+Configure the API address, sensor identity, and secret explicitly. The bearer
+token is read from the named environment variable and is never placed in the
+command line or source:
+
+```powershell
+$env:PYTHONPATH = "$PWD\backend;$PWD"
+$env:HONEYPOT_TELEMETRY_INGEST_TOKEN = "replace-with-a-long-random-local-token"
+python -m app.telemetry.zeek_cli `
+  --log-file "D:\zeek\logs\current\conn.log" `
+  --api-url "http://127.0.0.1:8000" `
+  --sensor-id "zeek-lab-01" `
+  --token-env "HONEYPOT_TELEMETRY_INGEST_TOKEN" `
+  --cursor-file "D:\zeek\state\conn.cursor.json"
+```
+
+The cursor stores the byte offset and TSV headers, advancing each complete
+record only after HTTP 200 (confirmed duplicate) or 201 (new event). Re-running
+the command resumes from that point; server-side deduplication also protects
+retries after an accepted event whose response was lost. Use a separate cursor
+for each rotated log file. If a log is truncated/rotated in place, start with a
+new cursor after verifying the intended input file. A changed record reusing a
+Zeek UID is rejected by the API as a conflict and stops processing for review.
+For JSON, the adapter expects one Zeek object per line. The adapter only parses
+and forwards records to the explicitly configured API; it never executes log
+contents or initiates scanning.
+
+The in-process deduplication lock and SSE fanout assume the
+default single Uvicorn worker; multiple workers would need shared coordination.
+Keep the API bound to a trusted local environment: ingestion requires a
+minimum 32-byte shared bearer token, but the existing event, alert, and stream
+read APIs do not provide user authentication or per-organization
+authorization. Do not expose the service to untrusted networks without an
+access-control layer, TLS, and appropriate secret management.
+
 ## Behavioral fingerprint contract
 
 The existing operational `BehavioralFingerprint` remains fingerprint v1 and

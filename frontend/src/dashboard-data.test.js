@@ -6,6 +6,7 @@ import {
   formatRatio,
   getScenarioMetricRows,
   getStrategyTimeline,
+  prependUnique,
 } from "./dashboard-data.js";
 
 test("missing measurements remain unavailable instead of becoming zero", () => {
@@ -70,4 +71,14 @@ test("strategy timeline includes only sequences returned by the API", () => {
   assert.equal(timeline.length, 1);
   assert.deepEqual(timeline[0].strategies, ["neutral_response", "credential_decoy"]);
   assert.deepEqual(timeline[0].generatedDecoyIds, ["generated-file-x"]);
+});
+
+test("live updates are prepended, deduplicated, and bounded", () => {
+  const existing = [{ event_id: "event-a" }, { event_id: "event-b" }];
+  assert.deepEqual(
+    prependUnique(existing, { event_id: "event-a", severity: "high" }, "event_id"),
+    [{ event_id: "event-a", severity: "high" }, { event_id: "event-b" }],
+  );
+  assert.equal(prependUnique(existing, { event_id: "event-c" }, "event_id", 2).length, 2);
+  assert.equal(prependUnique(existing, {}, "event_id"), existing);
 });

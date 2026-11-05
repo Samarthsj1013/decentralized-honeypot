@@ -42,3 +42,20 @@ export function runEvaluation(body) {
 export function getEvaluation(evaluationId) {
   return request(`/evaluations/${encodeURIComponent(evaluationId)}`);
 }
+
+export function getTelemetryAlerts(limit = 30) {
+  return request(`/telemetry/alerts?limit=${encodeURIComponent(limit)}`);
+}
+
+export function openTelemetryStream({ onEvent, onAlert, onStatus }) {
+  const stream = new EventSource(`${API_BASE_URL}/telemetry/stream`);
+  stream.onopen = () => onStatus?.("connected");
+  stream.onerror = () => onStatus?.("reconnecting");
+  stream.addEventListener("event", (message) => {
+    try { onEvent?.(JSON.parse(message.data)); } catch { /* Ignore malformed server frames. */ }
+  });
+  stream.addEventListener("alert", (message) => {
+    try { onAlert?.(JSON.parse(message.data)); } catch { /* Ignore malformed server frames. */ }
+  });
+  return stream;
+}

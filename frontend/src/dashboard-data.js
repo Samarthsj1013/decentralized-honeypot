@@ -51,3 +51,8 @@ export function getStrategyTimeline(evaluation) {
       generatedCount: run.simulation_summary.decoys_generated,
     }));
 }
+
+export function prependUnique(items, item, key, limit = 20) {
+  if (!item || !item[key]) return items;
+  return [item, ...items.filter((existing) => existing[key] !== item[key])].slice(0, limit);
+}
