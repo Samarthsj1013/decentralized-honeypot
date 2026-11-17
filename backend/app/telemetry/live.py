@@ -4,7 +4,7 @@ from threading import Lock
 from typing import Any
 
 from app.events.models import HoneypotEvent
-from app.telemetry.models import TelemetryAlert, live_summary
+from app.telemetry.models import TelemetryAlert, cowrie_summary, live_summary
 
 
 class LiveUpdateHub:
@@ -29,9 +29,16 @@ class LiveUpdateHub:
 
     def publish_event(self, event: HoneypotEvent) -> None:
         self._publish({"kind": "event", "id": event.event_id, "data": live_summary(event).model_dump(mode="json")})
+        summary = cowrie_summary(event)
+        if summary is not None:
+            self._publish({"kind": "cowrie", "id": event.event_id, "data": summary.model_dump(mode="json")})
 
     def publish_alert(self, alert: TelemetryAlert) -> None:
         self._publish({"kind": "alert", "id": alert.alert_id, "data": alert.model_dump(mode="json")})
+
+    def publish_incident(self, incident_id: str) -> None:
+        # Send only a refresh hint; detailed evidence is fetched via the API.
+        self._publish({"kind": "incident", "id": f"incident-{incident_id}", "data": {"incident_id": incident_id}})
 
     def _publish(self, message: dict[str, Any]) -> None:
         with self._lock:

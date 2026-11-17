@@ -87,14 +87,14 @@ class InteractionWorkflow:
                 # Re-register persisted projections as recovery if a prior
                 # process ended after the DB commit but before memory update.
                 self._honeypot.register_generated_decoys(generated)
-            except Exception as exc:
+            except Exception:
                 raise HTTPException(
                     status_code=500,
                     detail=(
                         "Interaction was recorded, but adaptive decoy "
-                        f"generation or persistence failed: {exc}"
+                        "generation or persistence failed."
                     ),
-                ) from exc
+                ) from None
             history_storage.set_observed_strategy(
                 request.actor_id,
                 current_strategy,

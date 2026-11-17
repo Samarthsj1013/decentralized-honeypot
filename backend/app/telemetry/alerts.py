@@ -31,6 +31,11 @@ class TelemetryAlertService:
     def _rule_for(cls, event: HoneypotEvent) -> str | None:
         if event.source != "external":
             return None
+        if (
+            event.source_system == "suricata"
+            and event.telemetry_event_type == "suricata_alert"
+        ):
+            return "suricata_eve_alert"
         if event.severity in {"high", "critical"}:
             return "external_high_severity"
         normalized_type = (event.telemetry_event_type or "").casefold()

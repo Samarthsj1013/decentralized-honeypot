@@ -17,6 +17,27 @@ from app.events.models import TelemetryIngestRequest
 from app.telemetry.zeek_conn import iter_zeek_tsv, parse_json_record
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Prevent a configured collector from forwarding bearer credentials."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _validated_api_url(value: str) -> str:
+    parsed = urlparse(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("API URL must be an explicit HTTP(S) URL without user info, query, or fragment")
+    return value.rstrip("/")
+
+
 def _save_cursor(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
@@ -25,6 +46,7 @@ def _save_cursor(path: Path, value: dict[str, Any]) -> None:
 
 
 def _post_event(api_url: str, token: str, event: TelemetryIngestRequest) -> bool:
+    api_url = _validated_api_url(api_url)
     request = urllib.request.Request(
         api_url.rstrip("/") + "/api/v1/telemetry/ingest",
         data=event.model_dump_json().encode("utf-8"),
@@ -32,18 +54,13 @@ def _post_event(api_url: str, token: str, event: TelemetryIngestRequest) -> bool
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
+        opener = urllib.request.build_opener(_NoRedirectHandler())
+        with opener.open(request, timeout=15) as response:
             if response.status not in {200, 201}:
                 raise RuntimeError(f"telemetry API returned HTTP {response.status}")
             return response.status == 201
     except urllib.error.HTTPError as exc:
-        detail = ""
-        try:
-            body = json.loads(exc.read(4096).decode("utf-8"))
-            detail = str(body.get("detail", "")) if isinstance(body, dict) else ""
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            pass
-        raise RuntimeError(f"telemetry API rejected event (HTTP {exc.code}): {detail}") from None
+        raise RuntimeError(f"telemetry API rejected event (HTTP {exc.code})") from None
     except urllib.error.URLError as exc:
         raise RuntimeError(f"could not reach configured telemetry API: {exc.reason}") from None
 
@@ -158,9 +175,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--token-env", required=True, help="Environment variable holding the bearer token")
     parser.add_argument("--cursor-file", type=Path, help="Restart cursor (defaults beside the log)")
     args = parser.parse_args(argv)
-    parsed_url = urlparse(args.api_url)
-    if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
-        parser.error("--api-url must be an explicit http:// or https:// URL")
+    try:
+        _validated_api_url(args.api_url)
+    except ValueError as exc:
+        parser.error(str(exc))
     token = os.environ.get(args.token_env)
     if not token:
         parser.error(f"environment variable {args.token_env!r} is not set")

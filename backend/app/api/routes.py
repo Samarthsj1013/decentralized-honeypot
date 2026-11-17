@@ -2,10 +2,13 @@ import asyncio
 import hmac
 import json
 import os
+from urllib.parse import urlsplit
+
+import httpx
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from pydantic import ValidationError
+from pydantic import IPvAnyAddress, ValidationError
 
 from app.adaptation.service import (
     AdaptationDecision,
@@ -19,6 +22,9 @@ from app.events.models import (
     TelemetryIngestRequest,
 )
 from app.events.store import event_store
+from app.experiments.models import ExperimentRequest, ExperimentResult
+from app.experiments.service import ExperimentService
+from app.experiments.storage import ExperimentStorage
 from app.evaluation.models import EvaluationRequest, EvaluationSummary
 from app.evaluation.service import EvaluationService
 from app.evaluation.storage import SQLiteEvaluationStorage
@@ -53,6 +59,20 @@ from app.intelligence.fingerprint_schema import (
     to_shareable_export,
     validate_fingerprint_payload,
 )
+from app.incidents.models import Incident, IncidentPage, IncidentStats
+from app.incidents.service import IncidentService
+from app.incidents.storage import SQLiteIncidentStorage
+from app.profiling.models import (
+    AttackerBehaviorProfile,
+    DeceptionRecommendation,
+    ProfileList,
+    ProfileRecomputeRequest,
+    ProfileRecomputeResponse,
+    ProfileStats,
+    RecommendationList,
+)
+from app.profiling.service import AttackerProfileService
+from app.profiling.storage import SQLiteProfileStorage
 from app.ledger.checkpoint import (
     CheckpointVerification,
     SignedCheckpoint,
@@ -77,10 +97,81 @@ from app.strategy_sharing import (
 )
 from app.telemetry.alerts import TelemetryAlertService
 from app.telemetry.live import LiveUpdateHub
-from app.telemetry.models import TelemetryAlert, TelemetryIngestResponse, live_summary
+from app.telemetry.models import CowrieEventSummary, TelemetryAlert, TelemetryIngestResponse, cowrie_summary, live_summary
 from app.telemetry.service import MAX_TELEMETRY_BODY_BYTES, TelemetryIngestionService
 
 router = APIRouter(prefix="/api/v1")
+
+
+async def _evaluate_intelligence_collection(event: HoneypotEvent) -> dict:
+    """Optionally send only the approved event identity projection to a local node collector."""
+    base_url = os.getenv("HONEYPOT_INTEL_COLLECTOR_URL", "").strip().rstrip("/")
+    token = os.getenv("HONEYPOT_INTEL_COLLECTOR_TOKEN", "")
+    if not base_url and not token:
+        return {"status": "disabled"}
+    parsed = urlsplit(base_url)
+    if (
+        not base_url or len(token) < 32 or parsed.scheme not in {"http", "https"}
+        or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment
+    ):
+        return {"status": "misconfigured"}
+    if event.source != "external" or not event.sensor_id or not event.source_event_id or not event.source_ip:
+        return {"status": "not_eligible"}
+    projection = {
+        "source_system": event.source_system or "generic",
+        "sensor_id": event.sensor_id,
+        "external_event_id": event.source_event_id,
+        "occurred_at": event.timestamp.isoformat(),
+        "event_type": event.telemetry_event_type or event.action,
+        "severity": event.severity,
+        "source_ip": event.source_ip,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=3.0, follow_redirects=False) as client:
+            response = await client.post(
+                f"{base_url}/v1/intelligence/observe", json=projection,
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            )
+        if response.status_code != 200 or len(response.content) > 16 * 1024:
+            return {"status": "unavailable"}
+        result = response.json()
+        if not isinstance(result, dict):
+            return {"status": "unavailable"}
+        allowed = {"eligible", "reason", "observation_count", "required_observations", "record_id"}
+        return {
+            "status": "evaluated", "outcome": result.get("status"),
+            **{key: result[key] for key in allowed if key in result},
+        }
+    except (httpx.HTTPError, ValueError):
+        return {"status": "unavailable"}
+
+
+@router.get("/network-node/dashboard", tags=["Network Operations"])
+async def network_node_dashboard():
+    """Proxy the separately configured local node summary without browser credentials."""
+    base_url = os.getenv("HONEYPOT_NODE_DASHBOARD_URL", "").strip().rstrip("/")
+    token = os.getenv("HONEYPOT_NODE_DASHBOARD_TOKEN", "")
+    if not base_url or len(token) < 32:
+        raise HTTPException(503, "Network node dashboard is not configured on the backend")
+    parsed = urlsplit(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise HTTPException(503, "Network node dashboard URL configuration is invalid")
+    try:
+        async with httpx.AsyncClient(timeout=3.0, follow_redirects=False) as client:
+            result = await client.get(
+                f"{base_url}/v1/dashboard/summary",
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            )
+        if result.status_code != 200 or len(result.content) > 256 * 1024:
+            raise HTTPException(503, "Configured network node dashboard is unavailable")
+        payload = result.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(503, "Configured network node returned an invalid summary")
+        return payload
+    except HTTPException:
+        raise
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(503, "Configured network node dashboard is unavailable") from None
 
 honeypot_service = HoneypotService(
     store=event_store,
@@ -126,6 +217,13 @@ evaluation_service = EvaluationService(
 telemetry_ingestion_service = TelemetryIngestionService(event_store, event_ledger)
 telemetry_alert_service = TelemetryAlertService()
 live_update_hub = LiveUpdateHub()
+incident_service = IncidentService(SQLiteIncidentStorage())
+attacker_profile_service = AttackerProfileService(
+    event_store,
+    SQLiteProfileStorage(),
+    incident_storage=incident_service.storage,
+)
+experiment_service = ExperimentService(ExperimentStorage())
 
 
 def _on_event_recorded(event: HoneypotEvent) -> None:
@@ -229,13 +327,26 @@ async def ingest_telemetry(
         raise HTTPException(422, safe_errors) from None
 
     event, created = telemetry_ingestion_service.ingest(payload)
+    try:
+        # Re-run correlation for an exact retry as well: this repairs a prior
+        # transient incident-store failure after the event itself was ledgered.
+        incident = incident_service.inspect(event)
+    except Exception:
+        raise HTTPException(
+            503,
+            "Telemetry was recorded, but incident correlation could not be persisted; safely retry this event",
+        ) from None
+    if incident is not None:
+        live_update_hub.publish_incident(incident.incident_id)
     alert = telemetry_alert_service.get_for_event(event.event_id)
+    intelligence_collection = await _evaluate_intelligence_collection(event)
     response.status_code = 201 if created else 200
     return TelemetryIngestResponse(
         accepted=True,
         duplicate=not created,
         event=event,
         alert=alert,
+        intelligence_collection=intelligence_collection,
     )
 
 
@@ -246,6 +357,105 @@ async def ingest_telemetry(
 )
 async def list_telemetry_alerts(limit: int = Query(default=50, ge=1, le=100)):
     return telemetry_alert_service.list_alerts(limit)
+
+
+@router.get("/telemetry/cowrie/events", response_model=list[CowrieEventSummary], tags=["Live Telemetry"])
+async def list_cowrie_events(limit: int = Query(default=30, ge=1, le=100)):
+    events = reversed(event_store.list_events())
+    summaries = []
+    for event in events:
+        summary = cowrie_summary(event)
+        if summary is not None:
+            summaries.append(summary)
+            if len(summaries) >= limit:
+                break
+    return summaries
+
+
+@router.get("/incidents/stats", response_model=IncidentStats, tags=["Incidents"])
+async def get_incident_stats():
+    return incident_service.stats()
+
+
+@router.get("/incidents", response_model=IncidentPage, tags=["Incidents"])
+async def list_incidents(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=1000000),
+    status: str | None = Query(default=None, pattern="^(open|acknowledged|resolved)$"),
+    severity: str | None = Query(default=None, pattern="^(low|medium|high|critical)$"),
+    source_ip: IPvAnyAddress | None = Query(default=None),
+):
+    items, total = incident_service.list(limit, offset, status, severity, str(source_ip) if source_ip else None)
+    return IncidentPage(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/incidents/{incident_id}", response_model=Incident, tags=["Incidents"])
+async def get_incident(incident_id: str):
+    return incident_service.get(incident_id)
+
+
+@router.post("/incidents/{incident_id}/acknowledge", response_model=Incident, tags=["Incidents"])
+async def acknowledge_incident(incident_id: str):
+    return incident_service.transition(incident_id, "acknowledged")
+
+
+@router.post("/incidents/{incident_id}/resolve", response_model=Incident, tags=["Incidents"])
+async def resolve_incident(incident_id: str):
+    return incident_service.transition(incident_id, "resolved")
+
+
+# ---------------------------------------------------------------------
+# ML attacker profiles and simulation-only deception recommendations
+# ---------------------------------------------------------------------
+
+@router.get("/profiles/stats", response_model=ProfileStats, tags=["Behavior Profiles"])
+async def get_profile_stats():
+    return attacker_profile_service.stats()
+
+
+@router.get("/profiles", response_model=ProfileList, tags=["Behavior Profiles"])
+async def list_behavior_profiles(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0, le=100_000),
+):
+    items, total = attacker_profile_service.list_profiles(limit, offset)
+    return {"items": items, "total": total}
+
+
+@router.post("/profiles/recompute", response_model=ProfileRecomputeResponse, tags=["Behavior Profiles"])
+async def recompute_behavior_profiles(body: ProfileRecomputeRequest = ProfileRecomputeRequest()):
+    profiles, recommendations_created = attacker_profile_service.recompute(body.window_seconds)
+    return ProfileRecomputeResponse(
+        profiles_updated=len(profiles),
+        recommendations_created=recommendations_created,
+        observation_window_seconds=body.window_seconds,
+        model_version=attacker_profile_service.model_version,
+        profiles=profiles,
+    )
+
+
+@router.get("/profiles/{profile_id}", response_model=AttackerBehaviorProfile, tags=["Behavior Profiles"])
+async def get_behavior_profile(profile_id: str):
+    return attacker_profile_service.get_profile(profile_id)
+
+
+@router.get("/deception/recommendations", response_model=RecommendationList, tags=["Adaptive Deception"])
+async def list_deception_recommendations(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=100_000),
+):
+    items, total = attacker_profile_service.list_recommendations(limit, offset)
+    return {"items": items, "total": total}
+
+
+@router.post("/deception/recommendations/{recommendation_id}/evaluate", response_model=DeceptionRecommendation, tags=["Adaptive Deception"])
+async def evaluate_deception_recommendation(recommendation_id: str):
+    return attacker_profile_service.evaluate_recommendation(recommendation_id)
+
+
+@router.post("/deception/recommendations/{recommendation_id}/approve", response_model=DeceptionRecommendation, tags=["Adaptive Deception"])
+async def approve_deception_recommendation(recommendation_id: str):
+    return attacker_profile_service.approve_recommendation(recommendation_id)
 
 
 @router.get(
@@ -292,6 +502,11 @@ async def stream_live_updates(
                     }
                     emitted.add(f"alert:{alert.alert_id}")
                     yield live_update_hub.encode(alert_message)
+                cowrie = cowrie_summary(event)
+                if cowrie is not None:
+                    cowrie_message = {"kind": "cowrie", "id": event.event_id, "data": cowrie.model_dump(mode="json")}
+                    emitted.add(f"cowrie:{event.event_id}")
+                    yield live_update_hub.encode(cowrie_message)
 
             while not await request.is_disconnected():
                 try:
@@ -464,6 +679,44 @@ async def run_simulation(request: SimulationRunRequest):
 )
 async def get_simulation_run(simulation_id: str):
     return attack_simulation_service.get_run(simulation_id)
+
+
+# ---------------------------------------------------------------------
+# Offline synthetic baseline/adaptive experiments
+# ---------------------------------------------------------------------
+
+@router.post("/experiments/run", response_model=ExperimentResult, status_code=201, tags=["Experiments"])
+def run_experiment(request: ExperimentRequest):
+    return experiment_service.run(request)
+
+
+@router.get("/experiments", tags=["Experiments"])
+def list_experiments(limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0, le=100000)):
+    items, total = experiment_service.list(limit, offset)
+    summaries = [{"experiment_id": item.experiment_id, "created_at": item.created_at, "seed": item.seed, "scenarios": item.scenarios, "repetitions": item.repetitions, "modes": item.modes, "execution_time_seconds": item.execution_time_seconds} for item in items]
+    return {"items": summaries, "total": total, "limit": limit, "offset": offset}
+
+
+@router.get("/experiments/{experiment_id}", response_model=ExperimentResult, tags=["Experiments"])
+def get_experiment(experiment_id: str):
+    return experiment_service.get(experiment_id)
+
+
+@router.get("/experiments/{experiment_id}/results", tags=["Experiments"])
+def get_experiment_results(experiment_id: str):
+    return experiment_service.get(experiment_id).scenario_results
+
+
+@router.get("/experiments/{experiment_id}/comparison", tags=["Experiments"])
+def get_experiment_comparison(experiment_id: str):
+    return experiment_service.get(experiment_id).comparison
+
+
+@router.get("/experiments/{experiment_id}/report", tags=["Experiments"])
+def get_experiment_report(experiment_id: str, format: str = Query(default="json", pattern="^(json|csv|markdown)$")):
+    content, media_type = experiment_service.report(experiment_id, format)
+    extension = {"json": "json", "csv": "csv", "markdown": "md"}[format]
+    return Response(content, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="experiment-{experiment_id}.{extension}"'})
 
 
 @router.post(

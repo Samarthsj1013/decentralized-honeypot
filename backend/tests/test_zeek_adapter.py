@@ -146,12 +146,17 @@ def test_http_sender_targets_only_configured_ingestion_endpoint(monkeypatch):
         def __exit__(self, *_args):
             return False
 
-    def fake_urlopen(request, timeout):
-        captured["url"] = request.full_url
-        captured["authorization"] = request.get_header("Authorization")
-        captured["body"] = json.loads(request.data)
-        captured["timeout"] = timeout
-        return FakeResponse()
+    class FakeOpener:
+        def open(self, request, timeout):
+            captured["url"] = request.full_url
+            captured["authorization"] = request.get_header("Authorization")
+            captured["body"] = json.loads(request.data)
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+    def fake_build_opener(handler):
+        captured["redirect_handler"] = handler
+        return FakeOpener()
 
     from datetime import datetime, timezone
     event = TelemetryIngestRequest(
@@ -159,10 +164,28 @@ def test_http_sender_targets_only_configured_ingestion_endpoint(monkeypatch):
         occurred_at=datetime(2026, 11, 2, tzinfo=timezone.utc),
         event_type="zeek_connection",
     )
-    monkeypatch.setattr(zeek_cli.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(zeek_cli.urllib.request, "build_opener", fake_build_opener)
     assert zeek_cli._post_event("https://telemetry.example", "secret-test", event) is True
     assert captured["url"] == "https://telemetry.example/api/v1/telemetry/ingest"
     assert captured["authorization"] == "Bearer secret-test"
     assert captured["body"]["source_system"] == "zeek"
     assert captured["timeout"] == 15
+    assert isinstance(captured["redirect_handler"], zeek_cli._NoRedirectHandler)
+    redirect_request = zeek_cli.urllib.request.Request("https://collector.example")
+    assert captured["redirect_handler"].redirect_request(
+        redirect_request, None, 307, "Temporary Redirect", {}, "https://other.example"
+    ) is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["file:///tmp/telemetry", "https://user:secret@example.test", "https://collector.test/?x=1"],
+)
+def test_sender_rejects_unsafe_api_urls(value):
+    event = TelemetryIngestRequest(
+        source_system="zeek", sensor_id="sensor-1", external_event_id="C123",
+        occurred_at="2026-11-02T00:00:00Z", event_type="zeek_connection",
+    )
+    with pytest.raises(ValueError, match="API URL"):
+        zeek_cli._post_event(value, "secret-test", event)
 

@@ -1,4 +1,4 @@
-
+﻿
 import hashlib
 import json
 from pathlib import Path
@@ -145,13 +145,13 @@ class EventLedger:
             return self._verify_entries(self._entries)
 
     def verify_persisted_chain(self) -> LedgerVerification:
-        """Reload and verify persisted rows, including external DB changes."""
+        """Reload and verify persisted rows without replacing valid memory with corrupt data."""
         with self._lock:
             if self._storage is None:
                 return self._verify_entries(self._entries)
 
             try:
-                entries = [
+                persisted_entries = [
                     LedgerEntry.model_validate(entry)
                     for entry in self._storage.load_entries()
                 ]
@@ -162,9 +162,12 @@ class EventLedger:
                     message="Persisted ledger entries could not be loaded.",
                 )
 
-            self._entries = entries
-            return self._verify_entries(self._entries)
+            verification = self._verify_entries(persisted_entries)
 
+            if verification.valid:
+                self._entries = persisted_entries
+
+            return verification
     @classmethod
     def _verify_entries(
         cls,

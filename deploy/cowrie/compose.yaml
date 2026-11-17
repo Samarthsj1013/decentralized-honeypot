@@ -1,0 +1,36 @@
+services:
+  cowrie:
+    image: cowrie/cowrie:v3.1.5
+    container_name: honeypot-cowrie
+    user: "999:999"
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${COWRIE_BIND_ADDRESS:-127.0.0.1}:${COWRIE_SSH_HOST_PORT:-2222}:2222/tcp"
+    volumes:
+      - cowrie-var:/cowrie/cowrie-git/var
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+      - /run:rw,noexec,nosuid,nodev,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 768m
+    cpus: 0.75
+    networks:
+      - isolated
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  cowrie-var:
+
+networks:
+  isolated:
+    internal: true

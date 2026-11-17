@@ -455,3 +455,22 @@ def test_analytics_summary_respects_recent_limit():
     assert len(data["recent_activity"]) == 2
     assert data["recent_activity"][0]["actor_id"] == "analytics-limit-3"
     assert data["recent_activity"][1]["actor_id"] == "analytics-limit-2"
+
+def test_ledger_failure_does_not_add_event_to_store():
+    from app.events.models import InteractionRequest
+    from app.events.store import EventStore
+    from app.honeypot.service import HoneypotService
+
+    class FailingLedger:
+        def append(self, event):
+            raise RuntimeError("Ledger unavailable")
+
+    store = EventStore()
+    service = HoneypotService(store=store, ledger=FailingLedger())
+
+    request = InteractionRequest(actor_id="test-actor", action="read")
+
+    with pytest.raises(RuntimeError, match="Ledger unavailable"):
+        service.record_interaction("decoy-finance-001", request)
+
+    assert store.count_events() == 0

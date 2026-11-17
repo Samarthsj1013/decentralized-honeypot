@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { API_BASE_URL, getEvaluation, getScenarios, getTelemetryAlerts, openTelemetryStream, runEvaluation } from "./api.js";
+import { API_BASE_URL, getAdminSession, loginAdmin, logoutAdmin, getNetworkNodeDashboard, getEvaluation, getScenarios, getTelemetryAlerts, getCowrieEvents, getIncidents, getIncidentStats, updateIncident, openTelemetryStream, runEvaluation, getBehaviorProfiles, getProfileStats, recomputeProfiles, getDeceptionRecommendations, evaluateDeceptionRecommendation, approveDeceptionRecommendation, runExperiment, getExperiments, getExperiment, downloadExperimentReport } from "./api.js";
 import {
   formatLatency,
   formatPercent,
   formatRatio,
   getScenarioMetricRows,
+  getIncidentDashboardData,
+  getCowrieDashboardData,
+  getProfileDashboardData,
+  getExperimentDashboardData,
   getStrategyTimeline,
   prependUnique,
   scenarioShortName,
@@ -268,7 +272,227 @@ function LiveTelemetryPanel({ events, alerts, status }) {
   );
 }
 
-export default function App() {
+function IncidentPanel({ data, loading, error, onAction }) {
+  return (
+    <section className="panel incident-panel" aria-label="Correlated security incidents">
+      <div className="section-heading"><div><span className="eyebrow">CROSS-SOURCE CORRELATION</span><h2>Incidents</h2><p>Rule-based correlations of Zeek and Suricata events. Confidence describes rule evidence, not probability of compromise.</p></div><span className="incident-total">{data.total} tracked</span></div>
+      <div className="incident-counts" aria-label="Incident status counts">{["open", "acknowledged", "resolved"].map((status) => <span key={status}><strong>{data.statusCounts[status]}</strong>{status}</span>)}</div>
+      <div className="incident-counts incident-severity-counts" aria-label="Incident severity breakdown">{["critical", "high", "medium", "low"].map((severity) => <span key={severity}><strong>{data.severityCounts[severity] || 0}</strong>{severity}</span>)}</div>
+      {error && <p className="incident-error" role="alert">Could not load incidents: {error}</p>}
+      {loading ? <p className="live-empty">Loading incident data…</p> : data.incidents.length === 0 ? <p className="live-empty">No correlated incidents are recorded.</p> : <ul className="incident-list">{data.incidents.map((incident) => <li key={incident.id} className="incident-item">
+        <div className="incident-main"><span className={`severity-dot severity-${incident.severity}`} /><div><strong>{incident.sourceIp} · {incident.severity}</strong><small>{incident.status} · {Math.round(incident.confidence * 100)}% rule evidence · {new Date(incident.lastSeen).toLocaleString()}</small></div></div>
+        <ul className="incident-evidence">{incident.evidence.map((text) => <li key={text}>{text}</li>)}</ul>
+        <div className="incident-tags">{incident.rules.map((rule) => <code key={rule}>{rule}</code>)}{incident.sensors.map((sensor) => <span key={sensor}>{sensor}</span>)}</div>
+        {incident.status !== "resolved" && <div className="incident-actions">{incident.status === "open" && <button className="secondary-button" onClick={() => onAction(incident.id, "acknowledge")}>Acknowledge</button>}<button className="secondary-button" onClick={() => onAction(incident.id, "resolve")}>Resolve</button></div>}
+      </li>)}</ul>}
+    </section>
+  );
+}
+
+function CowrieActivityPanel({ events, loading, error }) {
+  const data = getCowrieDashboardData(events);
+  return (
+    <section className="panel cowrie-panel" aria-label="Cowrie SSH honeypot activity">
+      <div className="section-heading"><div><span className="eyebrow">SSH HONEYPOT SENSOR</span><h2>Cowrie activity</h2><p>Recent sanitized telemetry only. Passwords, command text/output, filenames, and file contents are withheld.</p></div><span className="incident-total">Recent {events.length}</span></div>
+      <div className="incident-counts" aria-label="Cowrie activity counts">
+        <span><strong>{data.authenticationFailures}</strong>failed logins</span>
+        <span><strong>{data.authenticationSuccesses}</strong>successful logins</span>
+        <span><strong>{data.sessionEvents}</strong>session events</span>
+        <span><strong>{data.commandAttempts}</strong>command attempts</span>
+      </div>
+      {error && <p className="incident-error" role="alert">Could not load Cowrie events: {error}</p>}
+      {loading ? <p className="live-empty">Loading Cowrie activity…</p> : data.records.length === 0 ? <p className="live-empty">No Cowrie events have been ingested.</p> : <ul className="incident-list">{data.records.map((record) => <li key={record.id} className="incident-item">
+        <div className="incident-main"><span className={`severity-dot severity-${events.find((event) => event.event_id === record.id)?.severity || "low"}`} /><div><strong>{record.summary}</strong><small>{record.sourceIp} · {new Date(record.timestamp).toLocaleString()}</small></div></div>
+        <div className="incident-tags"><code>{record.type}</code>{record.authOutcome && <span>authentication: {record.authOutcome}</span>}{record.sessionRef !== "Unavailable" && <span>session ref {record.sessionRef}</span>}</div>
+      </li>)}</ul>}
+    </section>
+  );
+}
+
+function AttackerProfilesPanel() {
+  const [profiles, setProfiles] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [recommendations, setRecommendations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const data = getProfileDashboardData(profiles, stats, recommendations);
+
+  async function refresh() {
+    setLoading(true);
+    setError("");
+    try {
+      const [profilePage, profileStats, recommendationPage] = await Promise.all([
+        getBehaviorProfiles({ limit: 50 }), getProfileStats(), getDeceptionRecommendations({ limit: 50 }),
+      ]);
+      setProfiles(profilePage.items || []);
+      setStats(profileStats);
+      setRecommendations(recommendationPage.items || []);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  async function recompute() {
+    setBusy("recompute");
+    setNotice("");
+    setError("");
+    try {
+      const result = await recomputeProfiles(3600);
+      setNotice(`Recomputed ${result.profiles_updated} profiles; ${result.recommendations_created} new recommendations. Model ${result.model_version}.`);
+      await refresh();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function reviewAction(recommendation, action) {
+    setBusy(`${action}:${recommendation.id}`);
+    setError("");
+    setNotice("");
+    try {
+      const updated = action === "evaluate"
+        ? await evaluateDeceptionRecommendation(recommendation.id)
+        : await approveDeceptionRecommendation(recommendation.id);
+      setRecommendations((current) => current.map((item) => item.recommendation_id === updated.recommendation_id ? updated : item));
+      setNotice(action === "approve" ? "Recommendation approved for review; no deployment or enforcement occurred." : `Local synthetic evaluation ${updated.evaluation?.outcome || "completed"}.`);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const categoryMax = Math.max(1, ...Object.values(data.categoryCounts).map((value) => Number(value) || 0));
+  const clusterMax = Math.max(1, ...Object.values(data.clusterCounts).map((value) => Number(value) || 0));
+  return (
+    <section className="panel behavior-panel" id="profiles" aria-label="Attacker behavior profiles and deception recommendations">
+      <div className="section-heading"><div><span className="eyebrow">TELEMETRY BEHAVIOR MODELS</span><h2>Attacker behavior profiles</h2><p>Aggregate-only profiles; categories are model outputs from synthetic training labels, not confirmed intent.</p></div><button className="secondary-button" onClick={recompute} disabled={busy !== ""}>{busy === "recompute" ? "Recomputing…" : "Recompute profiles"}</button></div>
+      {error && <p className="incident-error" role="alert">{error}</p>}
+      {notice && <p className="profile-notice" role="status">{notice}</p>}
+      <div className="profile-summary-grid">
+        <article><span>Profiles</span><strong>{data.totalProfiles}</strong></article>
+        <article><span>Mean anomaly index</span><strong>{data.meanAnomalyIndex === null ? "Unavailable" : data.meanAnomalyIndex.toFixed(3)}</strong></article>
+        <article><span>Cluster groups</span><strong>{Object.keys(data.clusterCounts).length}</strong></article>
+        <article><span>Model version</span><strong className="profile-version">{data.modelVersion || "Unavailable"}</strong></article>
+      </div>
+      <p className="profile-note">Anomaly index is relative to a synthetic baseline, not a probability. Train the local model before recomputing profiles.</p>
+      <div className="profile-distributions">
+        <div><h3>Behavior categories</h3>{Object.keys(data.categoryCounts).length ? Object.entries(data.categoryCounts).map(([label, count]) => <div className="profile-bar-row" key={label}><span>{label.replaceAll("_", " ")}</span><div><i style={{ width: `${Math.max(4, (count / categoryMax) * 100)}%` }} /></div><b>{count}</b></div>) : <p className="live-empty">Unavailable until profiles are recomputed.</p>}</div>
+        <div><h3>Cluster distribution</h3>{Object.keys(data.clusterCounts).length ? Object.entries(data.clusterCounts).sort(([a], [b]) => Number(a) - Number(b)).map(([label, count]) => <div className="profile-bar-row" key={label}><span>Cluster {label}</span><div><i className="cluster-bar" style={{ width: `${Math.max(4, (count / clusterMax) * 100)}%` }} /></div><b>{count}</b></div>) : <p className="live-empty">Unavailable until profiles are recomputed.</p>}</div>
+      </div>
+      <div className="profile-section-heading"><h3>Profile details</h3><span>{loading ? "Loading…" : `${data.profiles.length} shown`}</span></div>
+      {loading ? <p className="live-empty">Loading profiles…</p> : data.profiles.length === 0 ? <p className="live-empty">No external sensor profiles yet. Ingest Zeek, Suricata, or Cowrie telemetry, train the synthetic model, then recompute.</p> : <div className="profile-list">{data.profiles.map((profile) => <details className="profile-card" key={profile.id}><summary><span><strong>{profile.category.replaceAll("_", " ")}</strong><small>{profile.sourceRef.slice(0, 16)}… · {profile.observations} observations · cluster {profile.cluster ?? "Unavailable"}</small></span><span className="anomaly-meter"><b>{profile.anomalyIndex === null ? "Unavailable" : profile.anomalyIndex.toFixed(2)}</b><i style={{ width: profile.anomalyIndex === null ? "0%" : `${profile.anomalyIndex * 100}%` }} /></span></summary><div className="profile-card-body"><p>Observed {new Date(profile.firstObserved).toLocaleString()} to {new Date(profile.lastObserved).toLocaleString()} · model {profile.modelVersion}</p><div className="feature-chip-list">{Object.entries(profile.features).filter(([, value]) => value !== 0).slice(0, 12).map(([name, value]) => <span key={name}>{name.replaceAll("_", " ")}: <b>{typeof value === "number" ? Number(value.toFixed?.(3) ?? value) : value}</b></span>)}</div><small>Feature importance is global to the synthetic classifier; it is explanatory context, not a per-event causal attribution.</small><ol>{profile.history.map((item, index) => <li key={`${profile.id}-${index}`}>{item.category.replaceAll("_", " ")} · {new Date(item.recorded_at).toLocaleString()}{item.changes?.length ? ` · ${item.changes.join(", ")}` : ""}</li>)}</ol></div></details>)}</div>}
+      <div className="profile-section-heading"><h3>Adaptive deception recommendations</h3><span>Explicit review required</span></div>
+      {loading ? <p className="live-empty">Loading recommendations…</p> : data.recommendations.length === 0 ? <p className="live-empty">Recommendations will appear after profile recomputation.</p> : <div className="recommendation-list">{data.recommendations.map((item) => <article className="recommendation-card" key={item.id}><div className="recommendation-head"><div><span className="eyebrow">{item.category.replaceAll("_", " ")}</span><h4>{item.title}</h4></div><span className={`recommendation-state state-${item.status}`}>{item.status.replaceAll("_", " ")}</span></div><p>{item.rationale}</p><div className="recommendation-meta"><span>Strategy: <code>{item.strategy}</code></span><span>Scenario: {item.expectedScenario || "More evidence required"}</span></div>{item.evaluation && <div className="evaluation-evidence"><strong>Local evaluation: {item.evaluation.outcome}</strong><span>Scenarios: {item.evaluation.measured_scenarios.join(", ") || "Unavailable"}</span><span>Interactions: {item.evaluation.interactions_recorded ?? "Unavailable"} / {item.evaluation.interactions_attempted ?? "Unavailable"}</span><span>Decoys generated: {item.evaluation.generated_decoys ?? "Unavailable"} · duration: {item.evaluation.elapsed_seconds === null ? "Unavailable" : `${(item.evaluation.elapsed_seconds * 1000).toFixed(1)} ms`}</span><small>{item.evaluation.telemetry_coverage} {item.evaluation.false_positive_risk}</small></div>}<div className="recommendation-actions">{item.status !== "approved" && <button className="secondary-button" onClick={() => reviewAction(item, "evaluate")} disabled={busy !== ""}>{busy === `evaluate:${item.id}` ? "Evaluating…" : item.status === "evaluation_failed" ? "Retry evaluation" : "Evaluate locally"}</button>}{item.status === "evaluated" && item.evaluation?.outcome === "passed" && <button className="primary-button" onClick={() => reviewAction(item, "approve")} disabled={busy !== ""}>{busy === `approve:${item.id}` ? "Approving…" : "Approve recommendation"}</button>}</div><small className="recommendation-warning">Approval records workflow state only. It does not deploy a decoy, expose a service, execute commands, or block traffic.</small></article>)}</div>}
+    </section>
+  );
+}
+
+const EXPERIMENT_SCENARIOS = ["reconnaissance", "ssh_authentication_probing", "repeated_failed_authentication", "successful_auth_suspicious_activity", "multi_port_probing", "multi_protocol_activity", "repeated_session_behavior", "multi_sensor_correlated_activity", "low_and_slow_activity", "mixed_benign_suspicious_traffic"];
+
+function ExperimentsPanel() {
+  const [scenarios, setScenarios] = useState([...EXPERIMENT_SCENARIOS]);
+  const [modes, setModes] = useState(["baseline", "adaptive"]);
+  const [repetitions, setRepetitions] = useState(1);
+  const [seed, setSeed] = useState(2026);
+  const [result, setResult] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    getExperiments().then((data) => active && setHistory(data.items || [])).catch((e) => active && setError(e.message));
+    return () => { active = false; };
+  }, []);
+  const view = getExperimentDashboardData(result);
+  const load = async (id) => {
+    setLoading(true); setError("");
+    try { const item = await getExperiment(id); setResult(item); }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!scenarios.length || !modes.length) { setError("Select at least one scenario and one mode."); return; }
+    setBusy(true); setError("");
+    try {
+      const item = await runExperiment({ scenarios, modes, repetitions: Number(repetitions), seed: Number(seed) });
+      setResult(item);
+      const latest = await getExperiments(); setHistory(latest.items || []);
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  const toggle = (values, setValues, value) => setValues(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+  return <section className="panel experiment-panel" id="experiments" aria-label="Offline adversary experiments">
+    <div className="section-heading"><div><span className="eyebrow">OFFLINE SYNTHETIC EVALUATION</span><h2>Adversary experiments</h2><p>Paired runs use deterministic synthetic events. The optional closed-loop mode simulates attacker reactions and updates a policy local to this experiment; no network connections or live policy changes occur.</p></div></div>
+    {error && <p className="incident-error" role="alert">{error}</p>}
+    <form className="experiment-form" onSubmit={submit}>
+      <div className="experiment-config-row"><label className="field"><span>Repetitions per scenario (1–10)</span><input type="number" min="1" max="10" value={repetitions} onChange={(e) => setRepetitions(e.target.value)} /></label><label className="field"><span>Random seed</span><input type="number" min="0" max="4294967295" value={seed} onChange={(e) => setSeed(e.target.value)} /></label><div className="experiment-options"><strong>Modes</strong>{["baseline", "adaptive", "closed_loop"].map((mode) => <label key={mode}><input type="checkbox" checked={modes.includes(mode)} onChange={() => toggle(modes, setModes, mode)} />{mode.replaceAll("_", " ")}</label>)}</div></div>
+      <fieldset className="experiment-scenarios"><legend>Scenarios ({scenarios.length} selected; max 200 mode-runs)</legend>{EXPERIMENT_SCENARIOS.map((scenario) => <label key={scenario}><input type="checkbox" checked={scenarios.includes(scenario)} onChange={() => toggle(scenarios, setScenarios, scenario)} />{scenario.replaceAll("_", " ")}</label>)}</fieldset>
+      <button className="primary-button" disabled={busy || loading}>{busy ? "Running synthetic experiment…" : "Run experiment"}</button>
+    </form>
+    <div className="experiment-history"><strong>Saved experiments</strong>{history.length ? history.slice(0, 10).map((item) => <button type="button" key={item.experiment_id} className="secondary-button" onClick={() => load(item.experiment_id)}>{item.experiment_id} · seed {item.seed}</button>) : <span>{loading ? "Loading…" : "No saved experiments yet."}</span>}</div>
+    {result && <div className="experiment-results"><div className="section-heading"><div><span className="eyebrow">{result.experiment_id} · SEED {result.seed}</span><h3>Measured results</h3></div><div className="experiment-downloads">{["json", "csv", "markdown"].map((format) => <button type="button" className="secondary-button" key={format} onClick={async () => { try { await downloadExperimentReport(result.experiment_id, format); } catch (downloadError) { setError(downloadError.message); } }}>{format.toUpperCase()} report</button>)}</div></div>
+      <div className="experiment-mode-grid">{view.modeRows.map((row) => <article key={row.mode}><h4>{row.mode.replaceAll("_", " ")}</h4><span>Detection coverage <b>{formatPercent(row.coverage)}</b></span><span>Event capture <b>{formatPercent(row.capture)}</b></span><span>Incident detection <b>{formatPercent(row.incidentRate)}</b></span><span>False positive / negative <b>{formatPercent(row.falsePositive)} / {formatPercent(row.falseNegative)}</b></span><span>Completion <b>{formatPercent(row.completion)}</b></span><span>Strategy changes <b>{row.adaptations}</b></span><span>Simulated engagement <b>{formatPercent(row.simulatedEngagement)}</b></span><span>Synthetic interaction depth <b>{Number.isFinite(row.meanSyntheticDepth) ? row.meanSyntheticDepth.toFixed(2) : "Unavailable"}</b></span><span>Virtual session duration <b>{Number.isFinite(row.medianSyntheticDuration) ? `${row.medianSyntheticDuration.toFixed(1)} s` : "Unavailable"}</b></span><span>Unique decoys accessed <b>{row.uniqueDecoysAccessed ?? "Unavailable"}</b></span>{row.meanReward != null && <span>Mean synthetic reward <b>{row.meanReward.toFixed(3)}</b></span>}</article>)}</div>
+      <div className="experiment-chart-grid" aria-label="Baseline, adaptive, and closed-loop metric comparison">{["detection_coverage", "event_capture_rate", "incident_detection_rate", "false_positive_rate", "false_negative_rate"].map((metric) => { const values = view.modeRows.map((row) => ({ mode: row.mode, value: ({ detection_coverage: row.coverage, event_capture_rate: row.capture, incident_detection_rate: row.incidentRate, false_positive_rate: row.falsePositive, false_negative_rate: row.falseNegative })[metric] })); return <div key={metric}><strong>{metric.replaceAll("_", " ")}</strong>{values.map((item) => <span key={item.mode}>{item.mode.replaceAll("_", " ")}<i className={`experiment-bar ${item.mode}`}><b style={{ width: Number.isFinite(item.value) ? `${Math.max(0, Math.min(100, item.value * 100))}%` : "0%" }} /></i><em>{formatPercent(item.value)}</em></span>)}</div>; })}</div>
+      <div className="experiment-table-wrap"><table><thead><tr><th>Metric</th><th>Baseline</th><th>Adaptive</th><th>Closed loop</th><th>Adaptive difference</th></tr></thead><tbody>{view.comparisonRows.map((row) => <tr key={row.metric}><td>{row.metric.replaceAll("_", " ")}</td><td>{row.baseline ?? "Unavailable"}</td><td>{row.adaptive ?? "Unavailable"}</td><td>{row.closed_loop ?? "Not selected"}</td><td>{row.absolute_difference ?? "Unavailable"}</td></tr>)}</tbody></table></div>
+      <h4>Scenario results and adaptation history</h4><div className="experiment-table-wrap"><table><thead><tr><th>Scenario</th><th>Mode</th><th>Detection</th><th>FP</th><th>FN</th><th>Latency</th><th>Strategy / reason</th><th>Reaction / reward</th></tr></thead><tbody>{view.scenarioRows.map((row, i) => <tr key={`${row.scenario}-${row.repetition}-${row.mode}-${i}`}><td>{row.scenario.replaceAll("_", " ")}</td><td>{row.mode.replaceAll("_", " ")}</td><td>{row.true_positives}</td><td>{row.false_positives}</td><td>{row.false_negatives}</td><td>{row.detection_latency_seconds ?? "Unavailable"}</td><td>{row.selected_strategy}{row.adaptation_reason && <small>{row.adaptation_reason}</small>}</td><td>{row.attacker_reactions?.join(", ") || "—"}{row.strategy_reward != null && <small>Reward: {row.strategy_reward.toFixed(3)}</small>}</td></tr>)}</tbody></table></div>
+      <p className="profile-note">{result.limitations.join(" ")}</p>
+    </div>}
+  </section>;
+}
+
+function NetworkOperationsPanel() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const result = await getNetworkNodeDashboard();
+        if (active) { setData(result); setError(""); }
+      } catch (requestError) {
+        if (active) setError(requestError.message);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    load();
+    const timer = setInterval(load, 15000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
+  const intelligence = data?.intelligence;
+  return <section className="panel network-operations-panel" id="network-ops" aria-label="Network operations dashboard">
+    <div className="section-heading"><div><span className="eyebrow">NODE OPERATIONS</span><h2>Peer and intelligence status</h2><p>Read-only local node view. Adaptive performance remains in the measured experiments panel below.</p></div><span className={`network-node-state ${data?.node?.status || (loading ? "checking" : "not-configured")}`}>{data?.node?.node_id || (loading ? "Connecting" : "Node not configured")}</span></div>
+    {error ? <p className="network-dashboard-error" role="status">Node dashboard unavailable: {error}</p>
+        : loading && !data ? <p className="network-dashboard-note">Loading node status…</p>
+          : data && <>
+            <div className="network-kpis">
+              <div><span>Peers configured</span><strong>{data.peers.length}</strong></div>
+              <div><span>Pending intelligence</span><strong>{intelligence.pending_count}</strong></div>
+              <div><span>Approved / rejected</span><strong>{intelligence.approved_count} / {intelligence.rejected_count}</strong></div>
+              <div><span>Sync failures</span><strong>{data.sync_failures}</strong></div>
+            </div>
+            <div className="network-tables">
+              <div><h3>Peer registry</h3>{data.peers.length ? <ul>{data.peers.map((peer) => <li key={peer.peer_id}><span><strong>{peer.peer_id}</strong><small>Last seen: {peer.last_seen ? new Date(peer.last_seen).toLocaleString() : "Never"} · failures: {peer.failure_count}</small></span><b className={`peer-status peer-${peer.enabled ? peer.status : "disabled"}`}>{peer.enabled ? peer.status : "disabled"}</b></li>)}</ul> : <p>No configured peers.</p>}</div>
+              <div><h3>Shared intelligence</h3>{intelligence.records.length ? <ul>{intelligence.records.slice(0, 8).map((record) => <li key={record.record_id}><span><strong>{record.indicator} · {record.classification}</strong><small>{record.publisher_id} · {record.source_system} · confidence heuristic {record.confidence_score.toFixed(2)}</small></span><b className={`peer-status peer-${record.state}`}>{record.state}</b></li>)}</ul> : <p>No intelligence records.</p>}</div>
+            </div>
+            <small className="network-dashboard-note">{data.confidence_definition} Signatures prove key possession and integrity, not that an indicator is true.</small>
+          </>}
+  </section>;
+}
+
+function AuthenticatedApp({ onLogout, role }) {
   const [scenarios, setScenarios] = useState([]);
   const [connection, setConnection] = useState("checking");
   const [evaluation, setEvaluation] = useState(null);
@@ -284,10 +508,52 @@ export default function App() {
   const [liveEvents, setLiveEvents] = useState([]);
   const [liveAlerts, setLiveAlerts] = useState([]);
   const [liveStatus, setLiveStatus] = useState("connecting");
+  const [incidentPage, setIncidentPage] = useState(null);
+  const [incidentStats, setIncidentStats] = useState(null);
+  const [incidentLoading, setIncidentLoading] = useState(true);
+  const [incidentError, setIncidentError] = useState("");
+  const [cowrieEvents, setCowrieEvents] = useState([]);
+  const [cowrieLoading, setCowrieLoading] = useState(true);
+  const [cowrieError, setCowrieError] = useState("");
   const scenarioRows = useMemo(() => getScenarioMetricRows(evaluation), [evaluation]);
   const timelineRows = useMemo(() => getStrategyTimeline(evaluation), [evaluation]);
   const overall = evaluation?.overall;
   const docsUrl = `${API_BASE_URL.replace(/\/api\/v1\/?$/, "")}/docs`;
+
+  async function refreshIncidents() {
+    setIncidentLoading(true);
+    setIncidentError("");
+    try {
+      const [page, stats] = await Promise.all([getIncidents(), getIncidentStats()]);
+      setIncidentPage(page);
+      setIncidentStats(stats);
+    } catch (requestError) {
+      setIncidentError(requestError.message);
+    } finally {
+      setIncidentLoading(false);
+    }
+  }
+
+  async function actOnIncident(incidentId, action) {
+    setIncidentError("");
+    try {
+      await updateIncident(incidentId, action);
+      await refreshIncidents();
+    } catch (requestError) {
+      setIncidentError(requestError.message);
+    }
+  }
+
+  async function refreshCowrie() {
+    setCowrieError("");
+    try {
+      setCowrieEvents(await getCowrieEvents());
+    } catch (requestError) {
+      setCowrieError(requestError.message);
+    } finally {
+      setCowrieLoading(false);
+    }
+  }
 
   async function checkConnection() {
     setConnection("checking");
@@ -304,14 +570,22 @@ export default function App() {
 
   useEffect(() => { checkConnection(); }, []);
 
+  useEffect(() => { refreshIncidents(); }, []);
+  useEffect(() => { refreshCowrie(); }, []);
+
   useEffect(() => {
     let mounted = true;
     getTelemetryAlerts().then((alerts) => {
       if (mounted) setLiveAlerts(alerts);
     }).catch(() => {});
     const stream = openTelemetryStream({
-      onEvent: (event) => mounted && setLiveEvents((current) => prependUnique(current, event, "event_id")),
+      onEvent: (event) => {
+        if (!mounted) return;
+        setLiveEvents((current) => prependUnique(current, event, "event_id"));
+      },
       onAlert: (alert) => mounted && setLiveAlerts((current) => prependUnique(current, alert, "alert_id")),
+      onIncident: () => mounted && refreshIncidents(),
+      onCowrie: (event) => mounted && setCowrieEvents((current) => prependUnique(current, event, "event_id", 30)),
       onStatus: (status) => mounted && setLiveStatus(status),
     });
     return () => {
@@ -408,6 +682,9 @@ export default function App() {
         <div className="nav-label">WORKSPACE</div>
         <nav className="nav-links">
           <a className="nav-link active" href="#overview" onClick={() => setMobileNavOpen(false)}><Icon name="chart" /><span>Evaluation overview</span></a>
+          <a className="nav-link" href="#profiles" onClick={() => setMobileNavOpen(false)}><Icon name="shield" /><span>Attacker profiles</span></a>
+          <a className="nav-link" href="#network-ops" onClick={() => setMobileNavOpen(false)}><Icon name="layers" /><span>Network operations</span></a>
+          <a className="nav-link" href="#experiments" onClick={() => setMobileNavOpen(false)}><Icon name="pulse" /><span>Experiments</span></a>
           <a className="nav-link" href="#scenarios" onClick={() => setMobileNavOpen(false)}><Icon name="layers" /><span>Scenario analysis</span></a>
           <a className="nav-link" href="#runs" onClick={() => setMobileNavOpen(false)}><Icon name="runs" /><span>Run details</span></a>
         </nav>
@@ -421,7 +698,7 @@ export default function App() {
       <main className="main-content" id="overview">
         <header className="topbar">
           <div className="crumb"><span>Workspace</span><b>/</b><strong>Evaluation</strong></div>
-          <div className="top-actions"><StatusPill status={connection} /><button className="icon-button" onClick={refresh} disabled={lookupBusy || busy} aria-label="Refresh API connection or selected evaluation" title="Refresh"><Icon name="refresh" /></button><button className="mobile-menu" onClick={() => setMobileNavOpen((open) => !open)} aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"} aria-expanded={mobileNavOpen}><Icon name="menu" /></button></div>
+          <div className="top-actions"><StatusPill status={connection} />{role === "development" && <span className="auth-mode-label">Open dev mode</span>}{onLogout && <button className="secondary-button session-logout" onClick={onLogout}>Sign out</button>}<button className="icon-button" onClick={refresh} disabled={lookupBusy || busy} aria-label="Refresh API connection or selected evaluation" title="Refresh"><Icon name="refresh" /></button><button className="mobile-menu" onClick={() => setMobileNavOpen((open) => !open)} aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"} aria-expanded={mobileNavOpen}><Icon name="menu" /></button></div>
         </header>
 
         <div className="page-wrap">
@@ -434,6 +711,11 @@ export default function App() {
           {notice && <div className="alert alert-success" role="status"><span>{notice}</span><button onClick={() => setNotice("")} aria-label="Dismiss message">×</button></div>}
 
           <LiveTelemetryPanel events={liveEvents} alerts={liveAlerts} status={liveStatus} />
+          <NetworkOperationsPanel />
+          <CowrieActivityPanel events={cowrieEvents} loading={cowrieLoading} error={cowrieError} />
+          <IncidentPanel data={getIncidentDashboardData(incidentPage, incidentStats)} loading={incidentLoading} error={incidentError} onAction={actOnIncident} />
+          <AttackerProfilesPanel />
+          <ExperimentsPanel />
 
           <section className="control-grid" aria-label="Evaluation controls">
             <form className="panel launch-panel" onSubmit={submitEvaluation}>
@@ -502,4 +784,59 @@ export default function App() {
       </main>
     </div>
   );
+}
+
+function AdminSessionGate() {
+  const [state, setState] = useState("checking");
+  const [token, setToken] = useState("");
+  const [error, setError] = useState("");
+  const [expiresIn, setExpiresIn] = useState(0);
+  const [role, setRole] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    getAdminSession().then((session) => {
+      if (active) { setExpiresIn(session.expires_in); setRole(session.role); setState("authenticated"); }
+    }).catch(() => { if (active) setState("anonymous"); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (state !== "authenticated" || !expiresIn) return undefined;
+    const timer = setTimeout(() => setState("anonymous"), expiresIn * 1000);
+    return () => clearTimeout(timer);
+  }, [state, expiresIn]);
+
+  async function submit(event) {
+    event.preventDefault();
+    setError("");
+    try {
+      const session = await loginAdmin(token);
+      setToken("");
+      setExpiresIn(session.expires_in);
+      setRole(session.role);
+      setState("authenticated");
+    } catch (loginError) {
+      setToken("");
+      setError(loginError.message);
+    }
+  }
+
+  async function signOut() {
+    try { await logoutAdmin(); } finally { setState("anonymous"); setExpiresIn(0); }
+  }
+
+  if (state === "checking") return <main className="auth-screen"><p role="status">Checking administrator session…</p></main>;
+  if (state === "authenticated") return <AuthenticatedApp role={role} onLogout={role === "admin" ? signOut : null} />;
+  return <main className="auth-screen"><form className="auth-card" onSubmit={submit}>
+    <span className="eyebrow">LOCAL ADMINISTRATOR SESSION</span><h1>Sign in to the dashboard</h1>
+    <p>Enter the backend administrator token. It is exchanged for a short-lived, HttpOnly session and is not saved in browser storage.</p>
+    <label className="field"><span>Administrator token</span><input type="password" value={token} onChange={(event) => setToken(event.target.value)} minLength={32} maxLength={512} autoComplete="off" required /></label>
+    {error && <p className="auth-error" role="alert">{error}</p>}
+    <button className="primary-button" type="submit">Sign in</button>
+  </form></main>;
+}
+
+export default function App() {
+  return <AdminSessionGate />;
 }

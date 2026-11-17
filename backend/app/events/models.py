@@ -96,7 +96,7 @@ class TelemetryIngestRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    source_system: Literal["generic", "zeek", "suricata"] = "generic"
+    source_system: Literal["generic", "zeek", "suricata", "cowrie"] = "generic"
     sensor_id: StrictStr = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.:-]+$")
     external_event_id: StrictStr = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
     occurred_at: datetime

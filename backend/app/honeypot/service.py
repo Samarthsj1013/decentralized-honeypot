@@ -1,4 +1,4 @@
-from uuid import uuid4
+﻿from uuid import uuid4
 
 from fastapi import HTTPException, status
 
@@ -106,7 +106,7 @@ class HoneypotService:
             action=request.action,
         )
 
-        self._store.add(event)
         self._ledger.append(event)
+        self._store.add(event)
 
         return event

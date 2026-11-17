@@ -241,7 +241,8 @@ def test_generation_failure_is_not_counted_as_success(monkeypatch):
     assert summary["decoys_generated"] == 0
     assert summary["generated_decoy_ids"] == []
     assert "Interaction was recorded" in summary["errors"][0]["message"]
-    assert "synthetic generation failure" in summary["errors"][0]["message"]
+    assert "adaptive decoy generation or persistence failed" in summary["errors"][0]["message"]
+    assert "synthetic generation failure" not in summary["errors"][0]["message"]
     assert summary["final_adaptation_strategy"] == "neutral_response"
 
 
