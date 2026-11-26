@@ -50,6 +50,10 @@ chain is local integrity evidence. It is not replicated consensus.
    and requires an explicit approval action. Approval is not automatic
    enforcement.
 
-The organization replication example uses in-process node objects, generated
-test keys, explicit trust, and separate temporary storage paths. It does not
-communicate between independent processes or implement a consensus protocol.
+The organization replication unit tests use in-process node objects, generated
+test keys, explicit trust, and separate temporary storage paths. The live demo
+and its integration test start two independent Uvicorn processes with separate
+SQLite stores and Ed25519 keys, exchange signed records over localhost HTTP,
+and exercise duplicate, tamper, downtime, and restart behavior. This remains a
+controlled local prototype: it does not implement consensus, quorum, or
+Byzantine fault tolerance, and it has not been verified across machines.

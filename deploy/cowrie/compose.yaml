@@ -1,6 +1,6 @@
 services:
   cowrie:
-    image: cowrie/cowrie:v3.1.5
+    image: cowrie/cowrie:3.1.5
     container_name: honeypot-cowrie
     user: "999:999"
     init: true

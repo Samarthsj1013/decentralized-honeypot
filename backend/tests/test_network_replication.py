@@ -442,6 +442,24 @@ def test_two_live_uvicorn_processes_transfer_retry_fail_restart_and_resync():
     assert result["post_restart_new_delivery"] == "stored"
 
 
+def test_live_demo_closes_parent_log_handle_after_start(tmp_path, monkeypatch):
+    from app.network import live_demo
+
+    captured = {}
+    process = object()
+
+    def fake_popen(*_args, **kwargs):
+        captured["log"] = kwargs["stdout"]
+        return process
+
+    monkeypatch.setattr(live_demo.subprocess, "Popen", fake_popen)
+    log_path = tmp_path / "node.log"
+
+    assert live_demo._start_node(tmp_path / "node.json", 12345, {}, log_path) is process
+    assert captured["log"].closed is True
+    assert log_path.exists()
+
+
 def test_publisher_key_rotation_requires_explicit_fingerprint_and_revocation(tmp_path):
     from hashlib import sha256
 

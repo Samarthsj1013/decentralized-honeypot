@@ -82,13 +82,14 @@ collector and refuse redirects to prevent credential forwarding. Interaction
 generation failures return a stable generic API message rather than raw
 exception text that could reveal local storage details.
 
-The application has no per-user accounts, CSRF/session model, rate limiting,
-centralized secret manager, automated distributed trust/revocation, or
-production-grade multi-tenant isolation. Do not expose it directly to the public internet. Use
-an authenticated reverse proxy, TLS, strict network isolation, resource limits,
-monitoring, and an operational incident-response process for any controlled
-lab deployment. The included Cowrie Compose configuration binds to loopback by
-default and uses an internal network; do not casually change that exposure.
+The application has no per-user accounts, persistent or distributed session
+store, distributed login throttling, centralized secret manager, automated
+distributed trust/revocation, or production-grade multi-tenant isolation. Do
+not expose it directly to the public internet. Use an authenticated reverse
+proxy, TLS, strict network isolation, resource limits, monitoring, and an
+operational incident-response process for any controlled lab deployment. The
+included Cowrie Compose configuration binds to loopback by default and uses an
+internal network; do not casually change that exposure.
 
 ## Data handling
 

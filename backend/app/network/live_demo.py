@@ -77,20 +77,40 @@ def _write_configs(directory: Path, port_a: int, port_b: int, env: dict[str, str
 def _start_node(config_path: Path, port: int, env: dict[str, str], log_path: Path) -> subprocess.Popen:
     node_env = dict(env)
     node_env["HONEYPOT_NODE_CONFIG"] = str(config_path)
-    log = log_path.open("ab")
-    return subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app.network.replication:load_node_app_from_environment",
-         "--factory", "--host", "127.0.0.1", "--port", str(port)],
-        cwd=Path(__file__).resolve().parents[2],
-        env=node_env,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
+    with log_path.open("ab") as log:
+        return subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "app.network.replication:load_node_app_from_environment",
+             "--factory", "--host", "127.0.0.1", "--port", str(port)],
+            cwd=Path(__file__).resolve().parents[2],
+            env=node_env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
 
 
 def _stop(process: subprocess.Popen | None) -> None:
-    if process is None or process.poll() is not None:
+    if process is None:
+        return
+    if os.name == "nt":
+        # The Windows venv launcher can leave the actual Python child alive
+        # after its wrapper exits. Stop the process tree so descendants also
+        # release the inherited log handle before TemporaryDirectory cleanup.
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    if process.poll() is not None:
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
         return
     process.terminate()
     try:

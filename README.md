@@ -25,7 +25,9 @@ The current architecture, security assumptions, implementation status, and
 reproducible demo/test instructions are summarized in
 [the project audit](docs/PROJECT_AUDIT.md), [security notes](docs/SECURITY.md),
 [architecture](docs/ARCHITECTURE.md), [implementation status](docs/IMPLEMENTATION_STATUS.md),
-[testing guide](docs/TESTING.md), and [demo guide](docs/DEMO_GUIDE.md).
+[testing guide](docs/TESTING.md), [demo guide](docs/DEMO_GUIDE.md),
+[final demo guide](docs/FINAL_DEMO_GUIDE.md), and
+[final placement status](docs/FINAL_PLACEMENT_STATUS.md).
 
 ## API access control and dashboard sessions
 
@@ -411,10 +413,13 @@ organizations.
 image, pinned here to release `v3.1.5`. It runs as UID/GID 999, drops Linux
 capabilities, enables `no-new-privileges`, uses a read-only container root with
 bounded temporary filesystems, sets CPU/memory/process limits, and uses an
-internal Docker network to deny general container egress. Only SSH port 2222
-is published, bound to `127.0.0.1` by default. Cowrie's writable state is held
-in a Docker named volume; no host credentials, project directories, or Docker
-socket are mounted. These settings follow the official [Cowrie Docker image
+internal Docker network to deny general container egress. Compose requests an
+SSH host mapping on `127.0.0.1:2222` by default, but the verified Docker
+Desktop run did not publish that mapping. The verified probe therefore ran
+inside Cowrie and connected only to its own loopback. Do not broaden the bind
+to work around this environment-specific limitation. Cowrie's writable state
+is held in a Docker named volume; no host credentials, project directories, or
+Docker socket are mounted. These settings follow the official [Cowrie Docker image
 and install guidance](https://docs.cowrie.org/en/latest/INSTALL.html).
 
 Start from the repository root with Docker Compose installed:
@@ -426,13 +431,14 @@ docker compose -f deploy/cowrie/compose.yaml up -d
 docker compose -f deploy/cowrie/compose.yaml ps
 ```
 
-In a lab terminal, connect only to the local published port and use synthetic
-test input. Never enter real credentials. The host bind can be changed
-explicitly (for example, to `0.0.0.0`) only for an isolated lab with deliberate
-firewall controls; that value can expose the honeypot on reachable interfaces
-and must not be used to publish the service to the public Internet by default.
-The internal network prevents the Cowrie container from making arbitrary
-outbound connections. The API/adapter runs separately on the host.
+In the verified Docker Desktop setup, the configured host port was not
+published. The repeatable demonstration uses the bounded probe inside the
+Cowrie container and sends no connection to a host or public service. Do not
+change the bind to `0.0.0.0` to work around this limitation. The internal
+network prevents the Cowrie container from making arbitrary outbound
+connections; the API/adapter runs separately on the host. See
+[`docs/FINAL_DEMO_GUIDE.md`](docs/FINAL_DEMO_GUIDE.md) for the verified probe
+and the restricted temporary-token-file startup procedure.
 
 Cowrie JSON logs include sensitive attacker-submitted values by design. Copy
 the JSON audit log to a restricted location outside the repository; do not
@@ -1005,6 +1011,30 @@ automatic peer discovery, TLS deployment automation, a remote key lifecycle
 service, high availability, or automatic threat enforcement. Publish only vetted
 indicators and keep node APIs on trusted networks behind TLS and appropriate
 access controls.
+
+## Manual dashboard verification (2026-11-26)
+
+The operator manually verified the dashboard from the original project
+directory. Three controlled SSH sessions generated **15 genuine Cowrie
+records**; ingestion reported **15 accepted, zero errors, and zero
+duplicates**. Administrator login, logout, and re-login succeeded. Telemetry
+and Cowrie activity rendered with 3 successful emulated logins, 6 session
+events, 0 failed logins, and 0 command attempts.
+
+Profile recomputation produced one 15-observation profile classified as
+Authentication Probing (mean anomaly index 0.438, cluster 4) using
+`attacker-profile-synthetic-v1`. One deception recommendation passed local
+synthetic evaluation (8/8 interactions, 10 synthetic decoys, 678.5 ms) and was
+approved. Approval is recorded workflow state only; it does not deploy decoys
+or enforce a policy. The model is trained on synthetic data, and these results
+do not establish real-world detection or defense effectiveness.
+
+The populated alerts and incidents panels were not visually verified, and the
+optional node dashboard was unconfigured. The sidebar text “Simulation mode /
+Synthetic activity only” is misleading when real sensor telemetry is also
+shown; the wording remains unchanged. The complete startup, restricted
+temporary-token-file handling, and cleanup steps are in
+[`docs/FINAL_DEMO_GUIDE.md`](docs/FINAL_DEMO_GUIDE.md).
 
 ## Milestone 8: offline adversary experiments
 

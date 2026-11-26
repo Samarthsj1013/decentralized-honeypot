@@ -90,6 +90,22 @@ verification. Start Docker Engine and rerun the steps below before claiming a
 live sensor demonstration. Docker also warned that the user's Docker config
 file was inaccessible; no Docker configuration was changed.
 
+#### Follow-up verification (2026-11-25)
+
+The earlier daemon check ran in a sandbox that could not access the Windows
+Docker named pipe. A separately approved local check reported context
+`desktop-linux` and Docker Engine 29.9.3. The Cowrie image reference was
+corrected to the published `cowrie/cowrie:3.1.5` tag and the isolated Compose
+service started. Docker Desktop did not materialize the configured loopback
+host port in the container's published-port state, so no host SSH connection
+was made. A bounded SSH client ran inside the Cowrie container and generated
+actual Cowrie JSON records with throwaway credentials; those records were
+ingested through the authenticated local API. See
+[Final Demo Guide](FINAL_DEMO_GUIDE.md) for exact commands, counts, and the
+network limitation. This follow-up does not change the historical result
+above: it records that the later sensor run succeeded through container
+loopback, not through a host-published SSH port.
+
 Start Cowrie using the README's `deploy/cowrie/compose.yaml` commands. From a
 PowerShell window, initiate a local SSH attempt and enter an invented password
 at the prompt:
