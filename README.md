@@ -9,6 +9,15 @@ Prototype: the current behavior-conditioned policy is deterministic and
 rule-based. It does not implement a GAN, reinforcement learning, or live
 network enforcement. Scenario evaluations use synthetic interactions.
 
+The `deployment-v1` branch contains a separate, anonymous read-only placement
+demonstration for Vercel and Render. It serves a curated snapshot, labels
+synthetic fixtures and controlled local results by provenance, and does not
+enable event ingestion or operator actions. See
+[`docs/CLOUD_DEPLOYMENT_GUIDE.md`](docs/CLOUD_DEPLOYMENT_GUIDE.md) for exact
+hosting configuration. No external service has been deployed from this
+branch; the Vercel rewrite target must be set to the Render URL issued in your
+own account.
+
 ## Research Goals
 
 - Build a controlled honeypot environment.

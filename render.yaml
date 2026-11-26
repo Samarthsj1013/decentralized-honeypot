@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: honeypot-placement-demo
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements-demo.txt
+    startCommand: python -m uvicorn app.public_demo:app --app-dir backend --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: HONEYPOT_ENV
+        value: production
+      - key: HONEYPOT_DEMO_DB_PATH
+        value: /tmp/honeypot-placement-demo/demo.sqlite3
+      - key: HONEYPOT_CORS_ORIGINS
+        sync: false

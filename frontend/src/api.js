@@ -8,6 +8,10 @@ export async function getAdminSession() {
   return result;
 }
 
+export function getPublicDemo() {
+  return request("/public-demo");
+}
+
 export async function loginAdmin(adminToken) {
   const result = await request("/auth/session", {
     method: "POST",

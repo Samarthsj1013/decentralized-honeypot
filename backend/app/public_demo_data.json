@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "label": "Placement Demonstration — Synthetic Security Data",
+  "notice": "Telemetry, alert, and incident rows are deterministic synthetic fixtures. The 15-event count and Cowrie, profile, and evaluation aggregates reproduce a previously operator-verified controlled local lab run using invented credentials and emulated Cowrie sessions. No raw logs, real attacker identifiers, or credentials are included; this is not live monitoring.",
+  "updated_at": "2026-11-26T12:00:00Z",
+  "overview": {
+    "telemetry_events": 15,
+    "cowrie_successful_logins": 3,
+    "cowrie_session_events": 6,
+    "cowrie_failed_logins": 0,
+    "cowrie_command_attempts": 0,
+    "alerts": 2,
+    "incidents": 1,
+    "profiles": 1,
+    "recommendations": 2
+  },
+  "telemetry": [
+    {"timestamp": "2026-11-26T11:59:00Z", "source_system": "cowrie", "event_type": "cowrie_login_success", "severity": "low", "summary": "Synthetic SSH login event; credentials omitted."},
+    {"timestamp": "2026-11-26T11:59:12Z", "source_system": "cowrie", "event_type": "cowrie_session_connected", "severity": "low", "summary": "Synthetic SSH session metadata; no command content stored."},
+    {"timestamp": "2026-11-26T11:59:31Z", "source_system": "zeek", "event_type": "connection_observed", "severity": "low", "summary": "Synthetic connection metadata used for correlation demonstration."},
+    {"timestamp": "2026-11-26T11:59:48Z", "source_system": "suricata", "event_type": "eve_alert", "severity": "medium", "summary": "Synthetic rule alert for dashboard demonstration; not a real detection."}
+  ],
+  "alerts": [
+    {"timestamp": "2026-11-26T11:59:48Z", "source_system": "suricata", "severity": "medium", "rule": "demo_synthetic_rule", "summary": "Synthetic alert example. No live sensor detection is being reported."},
+    {"timestamp": "2026-11-26T11:59:55Z", "source_system": "correlation", "severity": "low", "rule": "demo_cross_source_activity", "summary": "Synthetic cross-source alert example for UI display."}
+  ],
+  "cowrie": {
+    "successful_logins": 3,
+    "session_events": 6,
+    "failed_logins": 0,
+    "command_attempts": 0,
+    "events": [
+      {"timestamp": "2026-11-26T11:59:00Z", "event_type": "cowrie_login_success", "summary": "Emulated SSH login succeeded; this does not indicate host access."},
+      {"timestamp": "2026-11-26T11:59:12Z", "event_type": "cowrie_session_connected", "summary": "Synthetic SSH session connected."},
+      {"timestamp": "2026-11-26T11:59:31Z", "event_type": "cowrie_session_closed", "summary": "Synthetic SSH session closed."}
+    ]
+  },
+  "incidents": [
+    {"severity": "medium", "status": "open", "confidence": 0.6, "observed_at": "2026-11-26T11:59:55Z", "rules": ["demo_cross_source_activity"], "sensors": ["cowrie", "zeek"], "evidence": ["Synthetic Cowrie session metadata was paired with synthetic connection metadata.", "This rule-based example is a triage signal, not proof of compromise."]}
+  ],
+  "profiles": [
+    {"classification": "authentication_probing", "observations": 15, "anomaly_index": 0.438, "cluster": 4, "model_version": "attacker-profile-synthetic-v1", "provenance": "Operator-verified controlled local Cowrie lab using invented credentials.", "basis": "Synthetic-data-trained model; category is not confirmed intent."}
+  ],
+  "recommendations": [
+    {"status": "approved", "category": "authentication_probing", "strategy": "credential_decoy", "title": "Add synthetic authentication targets", "summary": "Approval is a workflow state only; it does not deploy or enforce a policy.", "evaluation": {"outcome": "passed", "kind": "isolated_synthetic_workflow_validation", "interactions_recorded": 8, "interactions_attempted": 8, "generated_decoys": 10, "elapsed_ms": 678.5, "observed_at": "2026-11-26", "provenance": "Previously operator-verified local synthetic evaluation."}},
+    {"status": "pending", "category": "reconnaissance", "strategy": "expanded_decoy_path", "title": "Increase simulated service diversity", "summary": "Synthetic pending-review example. No evaluation or approval action is available in the public demo.", "evaluation": null}
+  ],
+  "intelligence": {
+    "exchange_available_in_prototype": true,
+    "public_demo_peer_state": "not_connected",
+    "note": "Signed intelligence exchange is implemented as a local prototype. This public demo has no connected peers and does not claim consensus or live replication."
+  }
+}

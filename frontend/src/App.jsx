@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { API_BASE_URL, getAdminSession, loginAdmin, logoutAdmin, getNetworkNodeDashboard, getEvaluation, getScenarios, getTelemetryAlerts, getCowrieEvents, getIncidents, getIncidentStats, updateIncident, openTelemetryStream, runEvaluation, getBehaviorProfiles, getProfileStats, recomputeProfiles, getDeceptionRecommendations, evaluateDeceptionRecommendation, approveDeceptionRecommendation, runExperiment, getExperiments, getExperiment, downloadExperimentReport } from "./api.js";
+import { API_BASE_URL, getAdminSession, loginAdmin, logoutAdmin, getNetworkNodeDashboard, getEvaluation, getScenarios, getTelemetryAlerts, getCowrieEvents, getIncidents, getIncidentStats, updateIncident, openTelemetryStream, runEvaluation, getBehaviorProfiles, getProfileStats, recomputeProfiles, getDeceptionRecommendations, evaluateDeceptionRecommendation, approveDeceptionRecommendation, runExperiment, getExperiments, getExperiment, downloadExperimentReport, getPublicDemo } from "./api.js";
+import { PUBLIC_DEMO_LABEL, publicDemoMetrics } from "./public-demo.js";
 import {
   formatLatency,
   formatPercent,
@@ -786,6 +787,73 @@ function AuthenticatedApp({ onLogout, role }) {
   );
 }
 
+export function PublicDemoDashboard({ initialSnapshot = null } = {}) {
+  const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(initialSnapshot === null);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      setSnapshot(await getPublicDemo());
+    } catch (loadError) {
+      setError(loadError.message || "The demo service is waking up. Try again shortly.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  return <div className="app-shell public-demo-app">
+    <aside className="sidebar" aria-label="Public demo navigation">
+      <a className="brand" href="#overview" aria-label="Placement demonstration home"><span className="brand-mark"><Icon name="shield" size={23} /></span><span className="brand-copy"><strong>Decentralized AI</strong><small>HONEYPOT NETWORK</small></span></a>
+      <div className="nav-label">PUBLIC DEMONSTRATION</div>
+      <nav className="nav-links"><a className="nav-link active" href="#overview"><Icon name="chart" /><span>Overview</span></a><a className="nav-link" href="#telemetry"><Icon name="pulse" /><span>Telemetry</span></a><a className="nav-link" href="#incidents"><Icon name="shield" /><span>Incidents &amp; profiles</span></a><a className="nav-link" href="#recommendations"><Icon name="layers" /><span>Recommendations</span></a><a className="nav-link" href="#intelligence"><Icon name="runs" /><span>Intelligence exchange</span></a></nav>
+      <div className="sidebar-bottom"><div className="sidebar-status"><span className="mini-shield"><Icon name="shield" size={18} /></span><div><strong>Read-only demo</strong><small>Synthetic data</small></div></div></div>
+    </aside>
+    <main className="main-content" id="overview">
+      <header className="topbar"><div className="crumb"><span>Placement Edition</span><b>/</b><strong>Public demo</strong></div><div className="top-actions"><span className="connection-pill connection-connected"><span className="status-dot" />{loading ? "Loading" : error ? "Unavailable" : "Demo data"}</span></div></header>
+      <div className="page-wrap">
+        <section className="page-title-row"><div><div className="eyebrow">{PUBLIC_DEMO_LABEL}</div><h1>Security operations overview</h1><p>Explore sanitized telemetry, behavior analysis, and review-gated deception examples.</p></div></section>
+        {snapshot && <div className="alert alert-success" role="note"><strong>{snapshot.label}</strong><span>{snapshot.notice}</span></div>}
+        {error && <div className="alert alert-error" role="alert"><strong>Demo service unavailable</strong><span>The backend may be starting after an idle period. {error}</span><button className="secondary-button" onClick={load} disabled={loading}>Retry</button></div>}
+        {loading && !snapshot && <section className="panel public-demo-empty"><p role="status">Loading the demonstration snapshot. A free backend may need time to wake.</p></section>}
+        {snapshot && <>
+          <section className="kpi-grid" aria-label="Synthetic security metrics">{publicDemoMetrics(snapshot).map((item) => <KpiCard key={item.label} label={item.label} value={item.value} detail={item.detail} icon="pulse" />)}</section>
+
+          <section className="panel live-telemetry-panel" id="telemetry" aria-label="Synthetic telemetry and alerts">
+            <div className="section-heading"><div><span className="eyebrow">SYNTHETIC SAMPLE</span><h2>Telemetry &amp; security alerts</h2><p>Curated, bounded examples. No live sensor ingestion is enabled here.</p></div><span className="incident-total">{snapshot.telemetry.length} event examples</span></div>
+            <div className="live-feed-grid"><div className="live-feed-column"><h3>Recent telemetry</h3><ul className="live-event-list">{snapshot.telemetry.map((event, index) => <li key={`${event.event_type}-${index}`}><span className={`severity-dot severity-${event.severity}`} /><div><strong>{event.event_type}</strong><small>{event.source_system} · {new Date(event.timestamp).toLocaleString()}</small><small>{event.summary}</small></div><span className="live-severity">{event.severity}</span></li>)}</ul></div>
+              <div className="live-feed-column alert-feed-column"><h3>Alert examples</h3><ul className="live-event-list">{snapshot.alerts.map((alert, index) => <li key={`${alert.rule}-${index}`}><span className={`severity-dot severity-${alert.severity}`} /><div><strong>{alert.rule}</strong><small>{alert.source_system} · {new Date(alert.timestamp).toLocaleString()}</small><small>{alert.summary}</small></div><span className="live-severity">{alert.severity}</span></li>)}</ul></div></div>
+          </section>
+
+          <section className="panel cowrie-panel" aria-label="Controlled local Cowrie SSH activity"><div className="section-heading"><div><span className="eyebrow">CONTROLLED LOCAL COWRIE RUN · AGGREGATE ONLY</span><h2>SSH honeypot activity</h2><p>Counts reproduce the verified local run using invented credentials. Sample summaries are sanitized; credentials, commands, and file contents are absent.</p></div></div>
+            <div className="incident-counts"><span><strong>{snapshot.cowrie.failed_logins}</strong>failed logins</span><span><strong>{snapshot.cowrie.successful_logins}</strong>successful emulated logins</span><span><strong>{snapshot.cowrie.session_events}</strong>session events</span><span><strong>{snapshot.cowrie.command_attempts}</strong>command attempts</span></div>
+            <ul className="incident-list">{snapshot.cowrie.events.map((event, index) => <li className="incident-item" key={`${event.event_type}-${index}`}><div className="incident-main"><span className="severity-dot severity-low" /><div><strong>{event.summary}</strong><small>{event.event_type} · {new Date(event.timestamp).toLocaleString()}</small></div></div></li>)}</ul>
+          </section>
+
+          <section className="panel incident-panel" id="incidents" aria-label="Synthetic incidents"><div className="section-heading"><div><span className="eyebrow">RULE-BASED CORRELATION</span><h2>Incidents</h2><p>Confidence represents rule evidence, not probability of compromise.</p></div><span className="incident-total">{snapshot.incidents.length} example</span></div>
+            <ul className="incident-list">{snapshot.incidents.map((incident, index) => <li className="incident-item" key={`${incident.status}-${index}`}><div className="incident-main"><span className={`severity-dot severity-${incident.severity}`} /><div><strong>{incident.severity} · {incident.status}</strong><small>{Math.round(incident.confidence * 100)}% rule evidence · {new Date(incident.observed_at).toLocaleString()}</small></div></div><ul className="incident-evidence">{incident.evidence.map((evidence) => <li key={evidence}>{evidence}</li>)}</ul><div className="incident-tags">{incident.rules.map((rule) => <code key={rule}>{rule}</code>)}{incident.sensors.map((sensor) => <span key={sensor}>{sensor}</span>)}</div></li>)}</ul>
+          </section>
+
+          <section className="panel behavior-panel" aria-label="Controlled local behavior profile result"><div className="section-heading"><div><span className="eyebrow">PRECOMPUTED CONTROLLED LOCAL RESULT</span><h2>Attacker behavior profile</h2><p>This aggregate came from the verified invented-credential Cowrie lab run. The model was trained on synthetic data; the predicted category does not establish intent.</p></div></div>
+            <div className="profile-list">{snapshot.profiles.map((profile, index) => <article className="profile-card" key={`${profile.classification}-${index}`}><div className="profile-card-body"><div className="recommendation-head"><div><span className="eyebrow">{profile.observations} observations</span><h3>{profile.classification.replaceAll("_", " ")}</h3></div><span className="recommendation-state">cluster {profile.cluster}</span></div><div className="incident-counts"><span><strong>{profile.anomaly_index.toFixed(3)}</strong>anomaly index</span><span><strong>{profile.model_version}</strong>model</span></div><p className="profile-note">{profile.provenance} {profile.basis}</p></div></article>)}</div>
+          </section>
+
+          <section className="panel behavior-panel" id="recommendations" aria-label="Synthetic deception recommendations"><div className="section-heading"><div><span className="eyebrow">EXPLICIT REVIEW WORKFLOW</span><h2>Adaptive deception recommendations</h2><p>Approval is a recorded state only. The public demo cannot evaluate or approve recommendations.</p></div></div>
+            <div className="recommendation-list">{snapshot.recommendations.map((item, index) => <article className="recommendation-card" key={`${item.strategy}-${index}`}><div className="recommendation-head"><div><span className="eyebrow">{item.category.replaceAll("_", " ")}</span><h3>{item.title}</h3></div><span className={`recommendation-state state-${item.status}`}>{item.status}</span></div><p>{item.summary}</p><div className="recommendation-meta"><span>Strategy: <code>{item.strategy}</code></span></div>{item.evaluation && <div className="evaluation-evidence"><strong>Local synthetic evaluation: {item.evaluation.outcome}</strong><span>Interactions: {item.evaluation.interactions_recorded} / {item.evaluation.interactions_attempted}</span><span>Decoys generated: {item.evaluation.generated_decoys} · duration: {item.evaluation.elapsed_ms.toFixed(1)} ms</span><small>{item.evaluation.provenance} · {item.evaluation.observed_at}</small></div>}<small className="recommendation-warning">No decoy is deployed and no network control is changed.</small></article>)}</div>
+          </section>
+
+          <section className="panel network-operations-panel" id="intelligence" aria-label="Strategy intelligence exchange"><div className="section-heading"><div><span className="eyebrow">REPLICATION PROTOTYPE</span><h2>Decentralized intelligence</h2><p>{snapshot.intelligence.note}</p></div><span className="recommendation-state">{snapshot.intelligence.public_demo_peer_state.replaceAll("_", " ")}</span></div><p className="network-dashboard-note">Signed strategy and threat-intelligence exchange is demonstrated in isolated local nodes. This public service has no active peer links or consensus network.</p></section>
+        </>}
+        <footer className="page-footer"><span>Decentralized AI Honeypot Network</span><span>Public, anonymous, read-only demonstration</span><span>Snapshot refreshed {snapshot ? new Date(snapshot.updated_at).toLocaleString() : "when available"}</span></footer>
+      </div>
+    </main>
+  </div>;
+}
+
 function AdminSessionGate() {
   const [state, setState] = useState("checking");
   const [token, setToken] = useState("");
@@ -838,5 +906,5 @@ function AdminSessionGate() {
 }
 
 export default function App() {
-  return <AdminSessionGate />;
+  return import.meta.env.VITE_PUBLIC_DEMO === "true" ? <PublicDemoDashboard /> : <AdminSessionGate />;
 }
