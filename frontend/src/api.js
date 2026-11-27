@@ -9,7 +9,7 @@ export async function getAdminSession() {
 }
 
 export function getPublicDemo() {
-  return request("/public-demo");
+  return request("/public-demo", { credentials: "omit" });
 }
 
 export async function loginAdmin(adminToken) {
@@ -29,11 +29,11 @@ export async function logoutAdmin() {
 
 async function request(path, options = {}) {
   let response;
-  const { skipCsrf = false, ...fetchOptions } = options;
+  const { skipCsrf = false, credentials = "include", ...fetchOptions } = options;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...fetchOptions,
-      credentials: "include",
+      credentials,
       headers: {
         Accept: "application/json",
         ...(options.body ? { "Content-Type": "application/json" } : {}),

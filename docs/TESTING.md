@@ -15,9 +15,12 @@ create test stores under `$env:TEMP`:
 
 ```powershell
 $repoRoot = (Get-Location).Path
+$oldTemp = $env:TEMP
+$oldTmp = $env:TMP
 $tempRoot = Join-Path $env:TEMP ("honeypot-backend-" + [guid]::NewGuid().ToString("N"))
 $pytestTemp = Join-Path $env:TEMP ("honeypot-pytest-" + [guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $tempRoot, $pytestTemp -Force | Out-Null
+$appTemp = Join-Path $oldTemp ("honeypot-app-temp-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $tempRoot, $pytestTemp, $appTemp -Force | Out-Null
 foreach ($sourceRoot in @("backend/app", "backend/tests")) {
   $sourcePath = Join-Path $repoRoot $sourceRoot
   Get-ChildItem -LiteralPath $sourcePath -Recurse -File |
@@ -38,13 +41,22 @@ if (Test-Path (Join-Path $repoRoot "experiments/results/behavior_model.joblib"))
   Copy-Item (Join-Path $repoRoot "experiments/results/behavior_model.joblib") (Join-Path $tempRoot "experiments/results/behavior_model.joblib")
 }
 $env:PYTHONPATH = "$(Join-Path $tempRoot 'backend');$tempRoot"
+$env:TEMP = $appTemp
+$env:TMP = $appTemp
 Push-Location $tempRoot
 try {
   & (Join-Path $repoRoot ".venv/Scripts/python.exe") -m pytest backend/tests -q --rootdir=$tempRoot --basetemp=$pytestTemp -p no:cacheprovider
 } finally {
   Pop-Location
+  $env:TEMP = $oldTemp
+  $env:TMP = $oldTmp
 }
 ```
+
+The separate app temp path is intentional: the public-demo path-policy test
+must compare pytest's `tmp_path` with a different configured temp root to
+exercise rejection of a path outside that root. Both locations remain under
+the Windows temporary directory and outside the project checkout.
 
 Use `-v` instead of `-q` for test names. A test that needs the old model
 artifact will fail if that ignored artifact is absent; do not fabricate a

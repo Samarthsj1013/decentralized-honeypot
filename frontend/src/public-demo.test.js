@@ -24,17 +24,33 @@ test("public placement metrics fail safely for missing or invalid counters", () 
   assert.equal(metrics[2].value, "Unavailable");
 });
 
-test("public demo renders a read-only view without mounting the admin session gate", () => {
+test("public demo mounts the sandbox and avoids operator API mutations", () => {
   const source = readFileSync(new URL("./App.jsx", import.meta.url), "utf8");
   const publicView = source.slice(source.indexOf("function PublicDemoDashboard("), source.indexOf("function AdminSessionGate()"));
   assert.match(source, /VITE_PUBLIC_DEMO === "true" \? <PublicDemoDashboard \/> : <AdminSessionGate \/>/);
   assert.match(publicView, /getPublicDemo\(\)/);
-  assert.match(publicView, /PUBLIC_DEMO_LABEL/);
+  assert.match(publicView, /<InteractiveSandbox \/>/);
+  assert.match(publicView, /Public snapshot is read-only; sandbox actions stay in this browser/);
+  assert.match(publicView, /Start Simulation Lab/);
   assert.match(publicView, /snapshot\.telemetry/);
   assert.match(publicView, /snapshot\.incidents/);
   assert.match(publicView, /snapshot\.profiles/);
   assert.match(publicView, /snapshot\.recommendations/);
   assert.doesNotMatch(publicView, /updateIncident\(|recomputeProfiles\(|approveDeceptionRecommendation\(|evaluateDeceptionRecommendation\(|runEvaluation\(|runExperiment\(/);
+  const sandbox = readFileSync(new URL("./InteractiveSandbox.jsx", import.meta.url), "utf8");
+  assert.match(sandbox, /runSandboxSimulationAsync\(/);
+  assert.match(sandbox, /No configured sandbox rule matched this run\. That does not establish the activity as benign\./);
+  assert.doesNotMatch(sandbox, /useful benign\/control outcome/);
+  assert.match(sandbox, /Approve in sandbox/);
+  assert.doesNotMatch(sandbox, /localStorage|sessionStorage|fetch\(|https?:\/\//);
+  assert.doesNotMatch(sandbox, /approveDeceptionRecommendation|runEvaluation|runExperiment|updateIncident\(/);
+});
+
+test("public snapshot fetch omits credentials while operator requests retain session cookies", () => {
+  const source = readFileSync(new URL("./api.js", import.meta.url), "utf8");
+  assert.match(source, /getPublicDemo\(\)\s*\{\s*return request\("\/public-demo", \{ credentials: "omit" \}\);/);
+  assert.match(source, /credentials = "include"/);
+  assert.match(source, /getAdminSession\(\)\s*\{\s*const result = await request\("\/auth\/session"\)/);
 });
 
 test("React renders populated public demo sections from the sanitized fixture", async () => {
@@ -58,8 +74,15 @@ test("React renders populated public demo sections from the sanitized fixture", 
     assert.match(html, /authentication probing/);
     assert.match(html, /approved/);
     assert.match(html, /pending/);
+    assert.match(html, /INTERACTIVE SECURITY SANDBOX/i);
+    assert.match(html, /Run Simulation/);
+    assert.match(html, /Reset Sandbox/);
+    assert.match(html, /Strategy Comparison/);
+    assert.match(html, /Intelligence Exchange/);
+    assert.match(html, /Verified Lab Baseline/);
+    assert.match(html, /PREVIOUSLY VERIFIED CONTROLLED LOCAL LAB BASELINE/);
     assert.doesNotMatch(html, /Administrator token|Sign in to the dashboard|Acknowledge|Approve recommendation|Recompute profiles|Launch evaluation/);
-    assert.doesNotMatch(html, /<button\b/);
+    assert.match(html, /<button\b/);
   } finally {
     await vite.close();
   }

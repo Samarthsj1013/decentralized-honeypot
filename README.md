@@ -9,14 +9,16 @@ Prototype: the current behavior-conditioned policy is deterministic and
 rule-based. It does not implement a GAN, reinforcement learning, or live
 network enforcement. Scenario evaluations use synthetic interactions.
 
-The `deployment-v1` branch contains a separate, anonymous read-only placement
-demonstration for Vercel and Render. It serves a curated snapshot, labels
-synthetic fixtures and controlled local results by provenance, and does not
-enable event ingestion or operator actions. See
+The `deployment-v1` branch contains a separate anonymous placement frontend
+for Vercel and a narrowly allowlisted snapshot API on Render. Visitors can run
+bounded synthetic simulations entirely in browser-tab memory; the public API
+remains read-only and does not receive those runs. The interactive heuristics
+are explicitly separate from the trained local profile model and controlled
+Cowrie baseline. See
 [`docs/CLOUD_DEPLOYMENT_GUIDE.md`](docs/CLOUD_DEPLOYMENT_GUIDE.md) for exact
-hosting configuration. No external service has been deployed from this
-branch; the Vercel rewrite target must be set to the Render URL issued in your
-own account.
+hosting configuration and [`docs/INTERACTIVE_SANDBOX.md`](docs/INTERACTIVE_SANDBOX.md)
+for the scenarios, local workflow, safety boundaries, and limitations. The
+deployment branch keeps the released operational prototype isolated.
 
 ## Research Goals
 

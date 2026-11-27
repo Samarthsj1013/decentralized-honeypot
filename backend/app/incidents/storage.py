@@ -176,10 +176,26 @@ class SQLiteIncidentStorage:
         ports = {row["destination_port"] for row in rows if row["destination_port"] is not None}
         if len(ports) >= 3:
             rules.append("multiple_destination_ports"); evidence.append("Connections targeted at least three distinct destination ports within the correlation window.")
-        sensor_ids = {row["sensor_id"] for row in rows if row["sensor_id"] != "unknown"}
+        suspicious_sensor_ids = {
+            row["sensor_id"]
+            for row in rows
+            if row["sensor_id"] != "unknown"
+            and (
+                row["severity"] in {"high", "critical"}
+                or (row["source_system"] == "suricata" and row["event_type"] == "suricata_alert")
+                or (
+                    row["source_system"] == "cowrie"
+                    and (
+                        row["auth_outcome"] == "failed"
+                        or row["command_attempt"]
+                        or row["event_type"] in {"cowrie_file_upload", "cowrie_file_download"}
+                    )
+                )
+            )
+        }
         sensors = sorted({f"{row['source_system']}:{row['sensor_id']}" for row in rows})
-        if len(sensor_ids) >= 2:
-            rules.append("multi_sensor_activity"); evidence.append("Events were observed by multiple source-system or sensor identities.")
+        if len(suspicious_sensor_ids) >= 2:
+            rules.append("multi_sensor_activity"); evidence.append("Suspicious evidence was independently observed by multiple sensors.")
         severity_order = {"low": 1, "medium": 2, "high": 3, "critical": 4}
         ordered = sorted(rows, key=lambda row: row["occurred_at"])
         if len(ordered) >= 3 and severity_order[ordered[-1]["severity"]] > max(severity_order[row["severity"]] for row in ordered[:-1]):

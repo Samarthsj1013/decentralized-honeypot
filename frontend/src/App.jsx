@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { API_BASE_URL, getAdminSession, loginAdmin, logoutAdmin, getNetworkNodeDashboard, getEvaluation, getScenarios, getTelemetryAlerts, getCowrieEvents, getIncidents, getIncidentStats, updateIncident, openTelemetryStream, runEvaluation, getBehaviorProfiles, getProfileStats, recomputeProfiles, getDeceptionRecommendations, evaluateDeceptionRecommendation, approveDeceptionRecommendation, runExperiment, getExperiments, getExperiment, downloadExperimentReport, getPublicDemo } from "./api.js";
-import { PUBLIC_DEMO_LABEL, publicDemoMetrics } from "./public-demo.js";
+import { publicDemoMetrics } from "./public-demo.js";
+import InteractiveSandbox from "./InteractiveSandbox.jsx";
+import "./sandbox.css";
 import {
   formatLatency,
   formatPercent,
@@ -791,6 +793,7 @@ export function PublicDemoDashboard({ initialSnapshot = null } = {}) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(initialSnapshot === null);
+  const [activeNav, setActiveNav] = useState("overview");
 
   async function load() {
     setLoading(true);
@@ -806,24 +809,38 @@ export function PublicDemoDashboard({ initialSnapshot = null } = {}) {
 
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    const syncActiveNav = () => setActiveNav(window.location.hash.slice(1) || "overview");
+    syncActiveNav();
+    window.addEventListener("hashchange", syncActiveNav);
+    return () => window.removeEventListener("hashchange", syncActiveNav);
+  }, []);
+
   return <div className="app-shell public-demo-app">
     <aside className="sidebar" aria-label="Public demo navigation">
       <a className="brand" href="#overview" aria-label="Placement demonstration home"><span className="brand-mark"><Icon name="shield" size={23} /></span><span className="brand-copy"><strong>Decentralized AI</strong><small>HONEYPOT NETWORK</small></span></a>
       <div className="nav-label">PUBLIC DEMONSTRATION</div>
-      <nav className="nav-links"><a className="nav-link active" href="#overview"><Icon name="chart" /><span>Overview</span></a><a className="nav-link" href="#telemetry"><Icon name="pulse" /><span>Telemetry</span></a><a className="nav-link" href="#incidents"><Icon name="shield" /><span>Incidents &amp; profiles</span></a><a className="nav-link" href="#recommendations"><Icon name="layers" /><span>Recommendations</span></a><a className="nav-link" href="#intelligence"><Icon name="runs" /><span>Intelligence exchange</span></a></nav>
-      <div className="sidebar-bottom"><div className="sidebar-status"><span className="mini-shield"><Icon name="shield" size={18} /></span><div><strong>Read-only demo</strong><small>Synthetic data</small></div></div></div>
+      <nav className="nav-links">{[
+        ["overview", "Overview", "chart"], ["sandbox", "Simulation Lab", "pulse"],
+        ["sandbox-telemetry", "Telemetry", "pulse"], ["sandbox-detection", "Alerts & Incidents", "shield"],
+        ["sandbox-profiles", "Behavior Analysis", "chart"], ["sandbox-deception", "Adaptive Deception", "layers"],
+        ["sandbox-comparison", "Strategy Comparison", "runs"], ["sandbox-intelligence", "Intelligence Exchange", "runs"],
+        ["verified-baseline", "Verified Lab Baseline", "chart"],
+      ].map(([id, label, icon]) => <a className={`nav-link${activeNav === id ? " active" : ""}`} aria-current={activeNav === id ? "location" : undefined} key={id} href={`#${id}`} onClick={() => setActiveNav(id)}><Icon name={icon} /><span>{label}</span></a>)}</nav>
+      <div className="sidebar-bottom"><div className="sidebar-status"><span className="mini-shield"><Icon name="shield" size={18} /></span><div><strong>Interactive sandbox</strong><small>Synthetic browser data</small></div></div></div>
     </aside>
     <main className="main-content" id="overview">
       <header className="topbar"><div className="crumb"><span>Placement Edition</span><b>/</b><strong>Public demo</strong></div><div className="top-actions"><span className="connection-pill connection-connected"><span className="status-dot" />{loading ? "Loading" : error ? "Unavailable" : "Demo data"}</span></div></header>
       <div className="page-wrap">
-        <section className="page-title-row"><div><div className="eyebrow">{PUBLIC_DEMO_LABEL}</div><h1>Security operations overview</h1><p>Explore sanitized telemetry, behavior analysis, and review-gated deception examples.</p></div></section>
+        <section className="page-title-row"><div><div className="eyebrow">INTERACTIVE SECURITY SANDBOX — SYNTHETIC DATA</div><h1>Explore the honeypot network</h1><p>Run bounded scenarios and inspect their generated events, rule signals, profiles, and strategy outcomes.</p></div><a className="primary-button" href="#sandbox">Start Simulation Lab <span aria-hidden="true">→</span></a></section>
+        <InteractiveSandbox />
         {snapshot && <div className="alert alert-success" role="note"><strong>{snapshot.label}</strong><span>{snapshot.notice}</span></div>}
         {error && <div className="alert alert-error" role="alert"><strong>Demo service unavailable</strong><span>The backend may be starting after an idle period. {error}</span><button className="secondary-button" onClick={load} disabled={loading}>Retry</button></div>}
         {loading && !snapshot && <section className="panel public-demo-empty"><p role="status">Loading the demonstration snapshot. A free backend may need time to wake.</p></section>}
         {snapshot && <>
-          <section className="kpi-grid" aria-label="Synthetic security metrics">{publicDemoMetrics(snapshot).map((item) => <KpiCard key={item.label} label={item.label} value={item.value} detail={item.detail} icon="pulse" />)}</section>
+          <section className="verified-baseline" id="verified-baseline" aria-labelledby="verified-baseline-title"><div className="baseline-title"><div><span className="eyebrow">PREVIOUSLY VERIFIED CONTROLLED LOCAL LAB BASELINE</span><h2 id="verified-baseline-title">Cowrie placement walkthrough results</h2><p>This is a published historical snapshot, separate from the current browser sandbox run.</p></div></div><div className="kpi-grid" aria-label="Verified local baseline metrics">{publicDemoMetrics(snapshot).map((item) => <KpiCard key={item.label} label={item.label} value={item.value} detail={item.detail} icon="pulse" />)}</div></section>
 
-          <section className="panel live-telemetry-panel" id="telemetry" aria-label="Synthetic telemetry and alerts">
+          <section className="panel live-telemetry-panel" id="telemetry" aria-label="Previously verified local baseline telemetry and alerts">
             <div className="section-heading"><div><span className="eyebrow">SYNTHETIC SAMPLE</span><h2>Telemetry &amp; security alerts</h2><p>Curated, bounded examples. No live sensor ingestion is enabled here.</p></div><span className="incident-total">{snapshot.telemetry.length} event examples</span></div>
             <div className="live-feed-grid"><div className="live-feed-column"><h3>Recent telemetry</h3><ul className="live-event-list">{snapshot.telemetry.map((event, index) => <li key={`${event.event_type}-${index}`}><span className={`severity-dot severity-${event.severity}`} /><div><strong>{event.event_type}</strong><small>{event.source_system} · {new Date(event.timestamp).toLocaleString()}</small><small>{event.summary}</small></div><span className="live-severity">{event.severity}</span></li>)}</ul></div>
               <div className="live-feed-column alert-feed-column"><h3>Alert examples</h3><ul className="live-event-list">{snapshot.alerts.map((alert, index) => <li key={`${alert.rule}-${index}`}><span className={`severity-dot severity-${alert.severity}`} /><div><strong>{alert.rule}</strong><small>{alert.source_system} · {new Date(alert.timestamp).toLocaleString()}</small><small>{alert.summary}</small></div><span className="live-severity">{alert.severity}</span></li>)}</ul></div></div>
@@ -848,7 +865,7 @@ export function PublicDemoDashboard({ initialSnapshot = null } = {}) {
 
           <section className="panel network-operations-panel" id="intelligence" aria-label="Strategy intelligence exchange"><div className="section-heading"><div><span className="eyebrow">REPLICATION PROTOTYPE</span><h2>Decentralized intelligence</h2><p>{snapshot.intelligence.note}</p></div><span className="recommendation-state">{snapshot.intelligence.public_demo_peer_state.replaceAll("_", " ")}</span></div><p className="network-dashboard-note">Signed strategy and threat-intelligence exchange is demonstrated in isolated local nodes. This public service has no active peer links or consensus network.</p></section>
         </>}
-        <footer className="page-footer"><span>Decentralized AI Honeypot Network</span><span>Public, anonymous, read-only demonstration</span><span>Snapshot refreshed {snapshot ? new Date(snapshot.updated_at).toLocaleString() : "when available"}</span></footer>
+        <footer className="page-footer"><span>Decentralized AI Honeypot Network</span><span>Public snapshot is read-only; sandbox actions stay in this browser</span><span>Snapshot refreshed {snapshot ? new Date(snapshot.updated_at).toLocaleString() : "when available"}</span></footer>
       </div>
     </main>
   </div>;

@@ -49,12 +49,10 @@ def service(tmp_path):
 
 def test_alert_then_multiple_zeek_connections_create_persistent_incident(service):
     assert service.inspect(event("alert-1", "suricata", "suricata_alert", offset=0, severity="high")) is None
-    first_incident = service.inspect(event("conn-1", "zeek", "zeek_connection", offset=10, sensor="sensor-b"))
-    assert first_incident is not None
-    assert "multi_sensor_activity" in first_incident.detection_rules
+    first_zeek_connection = service.inspect(event("conn-1", "zeek", "zeek_connection", offset=10, sensor="sensor-b"))
+    assert first_zeek_connection is None
     incident = service.inspect(event("conn-2", "zeek", "zeek_connection", offset=20, sensor="sensor-b"))
     assert incident is not None
-    assert incident.incident_id == first_incident.incident_id
     assert incident.status == "open"
     assert incident.severity == "high"
     assert "alert_then_zeek_connections" in incident.detection_rules
@@ -70,7 +68,7 @@ def test_alert_then_multiple_zeek_connections_create_persistent_incident(service
         ([event(f"a{i}", "suricata", "suricata_alert", offset=i, severity="high") for i in range(2)], "multiple_suricata_alerts"),
         ([event(f"z{i}", "zeek", "zeek_connection", offset=i) for i in range(3)], "repeated_zeek_connections"),
         ([event(f"p{i}", "zeek", "zeek_connection", offset=i, port=1000+i) for i in range(3)], "multiple_destination_ports"),
-        ([event("s1", "zeek", "zeek_connection", offset=0, sensor="sensor-a"), event("s2", "suricata", "suricata_flow", offset=1, sensor="sensor-b")], "multi_sensor_activity"),
+        ([event("s1", "zeek", "zeek_connection", offset=0, sensor="sensor-a", severity="high"), event("s2", "suricata", "suricata_flow", offset=1, sensor="sensor-b", severity="high")], "multi_sensor_activity"),
         ([event("e1", "zeek", "zeek_connection", offset=0, severity="low"), event("e2", "zeek", "zeek_connection", offset=1, severity="medium"), event("e3", "zeek", "zeek_connection", offset=2, severity="high")], "suspicious_activity_escalation"),
     ],
 )
@@ -92,6 +90,18 @@ def test_simulator_and_unrelated_source_events_are_ignored(service):
 def test_same_sensor_reporting_two_sources_does_not_count_as_multi_sensor(service):
     assert service.inspect(event("zeek-one", "zeek", "zeek_connection", sensor="shared-sensor")) is None
     assert service.inspect(event("suri-one", "suricata", "suricata_flow", offset=1, sensor="shared-sensor")) is None
+
+
+def test_benign_zeek_event_does_not_count_as_suspicious_second_sensor(service):
+    assert service.inspect(event(
+        "suspicious-alert", "suricata", "suricata_alert", offset=0,
+        sensor="suricata-sensor", severity="high",
+    )) is None
+    assert service.inspect(event(
+        "routine-connection", "zeek", "zeek_connection", offset=1,
+        sensor="zeek-sensor", severity="low",
+    )) is None
+    assert service.stats()["total"] == 0
 
 
 @pytest.mark.parametrize(

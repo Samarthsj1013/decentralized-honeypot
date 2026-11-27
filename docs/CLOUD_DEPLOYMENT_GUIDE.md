@@ -1,9 +1,11 @@
 # Placement Demonstration Cloud Deployment
 
-This guide deploys the public, read-only Version 1.0 placement demonstration.
-The `deployment-v1` branch runs a small FastAPI app dedicated to the public
-snapshot. It does not load the operator API, create checkpoint keys, accept
-telemetry, run simulations, mutate recommendations, or load/train ML models.
+This guide deploys the public placement demonstration. Its React frontend has
+an interactive, bounded synthetic sandbox that runs in the visitor's browser
+tab. The Render service remains a small FastAPI app dedicated to a sanitized
+read-only snapshot. It does not load the operator API, create checkpoint
+keys, accept telemetry, run simulations, mutate recommendations, or load/train
+ML models.
 
 The required dashboard banner is **Placement Demonstration — Synthetic
 Security Data**. Telemetry, alerts, and incidents are deterministic synthetic
@@ -13,9 +15,13 @@ invented credentials and emulated sessions. No raw logs, credentials, actual
 attacker identities, or local database are included. Model predictions and
 synthetic test results are not evidence of real-world detection performance.
 
-No external Vercel or Render service has been created by this change. Free
-tiers only are selected in the example. Do not enable a paid plan or persistent
-disk without separate approval.
+The existing public services are `https://honeypot-placement-demo.vercel.app`
+and `https://honeypot-placement-demo.onrender.com`. Their status and response
+content should be checked in the provider dashboards before each release.
+The Render entry point remains read-only; the interactive sandbox does not
+write to its ephemeral SQLite snapshot or call an operational endpoint.
+Choose free tiers only. Do not enable a paid plan or persistent disk without
+separate approval.
 
 ## What the public backend permits
 
@@ -96,10 +102,10 @@ and [Render pricing](https://render.com/pricing).
 
    These are public UI settings, not credentials. Never put an API token,
    administrative token, or private key in a `VITE_` variable.
-5. Open `frontend/vercel.json` and replace
-   `https://REPLACE-WITH-RENDER-SERVICE.onrender.com` with the actual HTTPS
-   service origin copied from Render. Keep the `/api/:path*` mapping. Commit
-   and push deployment changes only after reviewing and approving them.
+5. `frontend/vercel.json` is configured to rewrite `/api/:path*` to the
+   existing `https://honeypot-placement-demo.onrender.com/api/:path*` service.
+   If the Render URL changes, update only that destination after confirming
+   the provider-issued origin. Keep the path mapping.
 6. Deploy Vercel after Render is healthy. Relative API calls use Vercel's
    same-origin external rewrite, so browser JavaScript does not receive a
    backend token or contact a hard-coded localhost API. Verify the rewrite
@@ -131,7 +137,7 @@ npm.cmd run build
 ```
 
 The full backend suite should be run from a fresh source-only copy with
-temporary database paths. Follow [`TESTING.md`](../TESTING.md); do not point a
+temporary database paths. Follow [`TESTING.md`](TESTING.md); do not point a
 test at local `data/`, `backend/data/`, or key files.
 
 ## Deployment verification
@@ -180,6 +186,26 @@ asleep or unavailable, the UI displays a retry message.
 - **Vercel plan question:** confirm Hobby eligibility for your usage before
   enabling the project; choose no paid upgrade without explicit approval.
 
+## Interactive browser sandbox
+
+The public React page includes an anonymous Simulation Lab. Its scenarios,
+event generation, rule alerts, incident correlation, heuristic profile,
+disabled synthetic decoy templates, recommendation replay/review, paired
+strategy comparison, and simulated Node A → Node B indicator exchange execute
+in component state in the current browser tab. No sandbox state is persisted
+to browser storage or sent to Render. Refreshing or closing the tab resets it.
+The only API request remains the bounded `GET /api/v1/public-demo` snapshot.
+
+For exact scenarios, algorithms, limitations, and local startup commands, see
+[`INTERACTIVE_SANDBOX.md`](INTERACTIVE_SANDBOX.md). Vercel environment settings
+must include `VITE_PUBLIC_DEMO=true` and `VITE_API_BASE_URL=/api/v1` in the
+Production environment. The Render service remains read-only. Keep the Vercel
+production branch set to `deployment-v1`, and use Vercel Deployment Protection
+for Preview deployments or disable preview deployments if they are not needed.
+Check that policy before enabling additional Git branches: preview domains
+must not accidentally expose the operator dashboard or be mistaken for the
+production placement demo.
+
 ## Rollback
 
 Use the Render and Vercel dashboards to roll back to the last known-good
@@ -190,9 +216,9 @@ unchanged. No local operational database or key is part of the rollback path.
 
 ## Limits
 
-- The dashboard snapshot is fixed and read-only. It does not ingest live
-  Cowrie, Zeek, or Suricata events and displays no active alerts from a running
-  sensor.
+- The Render dashboard snapshot remains fixed and read-only. It does not ingest
+  live Cowrie, Zeek, or Suricata events or display active alerts from a running
+  sensor. Browser sandbox results are synthetic and tab-local.
 - Synthetic events, alert rules, and incidents are examples. The profile is an
   aggregate from the controlled local Cowrie demonstration and uses a model
   trained on synthetic labels. The evaluation is a previously verified local
@@ -201,6 +227,9 @@ unchanged. No local operational database or key is part of the rollback path.
 - The public Render service has no connected nodes. The codebase supports a
   signed exchange prototype; this deployment does not run peer replication,
   consensus, or enforcement.
+- The in-page Node A/Node B exchange is a local state simulation without
+  cryptographic signatures, keys, transport, peer identity, or consensus. The
+  separate operational code's signed exchange is not exposed by this service.
 - Render Free is ephemeral, sleeps while idle, and has a constrained memory
   allocation. The public runtime avoids importing NumPy, scikit-learn,
   pandas, and joblib. An isolated local Windows Uvicorn process reached its
