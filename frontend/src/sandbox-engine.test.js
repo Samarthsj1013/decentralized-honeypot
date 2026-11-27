@@ -58,7 +58,8 @@ test("scenario, interaction count, and intensity affect generated telemetry", ()
   const high = runSandboxSimulation(settings({ scenario: "benign_activity", intensity: "high" }), { runId: "fast" });
   assert.equal(high.alerts.length, 0);
   assert.equal(high.recommendations.length, 0);
-  assert.equal(high.falsePositiveRate, 0);
+  assert.equal(high.falsePositiveEvents, null);
+  assert.equal(high.falsePositiveRate, null);
 });
 
 test("rule alerts and incidents are derived from event evidence", () => {
@@ -78,9 +79,20 @@ test("benign control never triggers suspicious-activity rules or recommendations
     assert.equal(benign.alerts.length, 0);
     assert.equal(benign.incidents.length, 0);
     assert.equal(benign.recommendations.length, 0);
-    assert.equal(benign.falsePositiveEvents, 0);
-    assert.equal(benign.falsePositiveRate, 0);
+    assert.equal(benign.benignEvents, 24);
+    assert.equal(benign.falsePositiveEvents, null);
+    assert.equal(benign.falsePositiveRate, null);
   }
+});
+
+test("browser sandbox does not report a zero false-positive rate without independent predictions", () => {
+  const mixed = runSandboxSimulation(settings({ scenario: "mixed_activity", interactionCount: 24 }), { runId: "mixed-fpr-unavailable" });
+  assert.ok(mixed.events.some((event) => event.suspicious === false));
+  assert.ok(mixed.events.some((event) => event.suspicious === true));
+  assert.ok(mixed.alerts.length > 0);
+  assert.ok(mixed.benignEvents > 0);
+  assert.equal(mixed.falsePositiveEvents, null);
+  assert.equal(mixed.falsePositiveRate, null);
 });
 
 test("event filters apply event type, severity, and ordering without mutating source", () => {
@@ -140,8 +152,8 @@ test("paired comparison uses identical scenario seeds and does not force adaptiv
     assert.equal(output.runs[index].recorded, output.runs[index + 1].recorded);
     assert.equal(output.runs[index].decoyCoverage, output.runs[index + 1].decoyCoverage);
   }
-  assert.equal(output.static.falsePositiveRate, 0);
-  assert.equal(output.adaptive.falsePositiveRate, 0);
+  assert.equal(output.static.falsePositiveRate, null);
+  assert.equal(output.adaptive.falsePositiveRate, null);
   assert.throws(() => compareSandboxStrategies(settings(), 6), /between 1 and 5/);
 });
 

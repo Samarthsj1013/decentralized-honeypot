@@ -89,8 +89,12 @@ policy, or deploy a decoy.
 
 Static/adaptive comparison runs 1–5 paired repetitions with identical seeds
 per pair. It reports measured interactions, decoy-category coverage, alerts,
-rule counts, scenario completion, strategy changes, and a synthetic
-false-positive rate when benign labels are present. The paired model is
+rule counts, scenario completion, and strategy changes. False-positive rate
+and event counts are unavailable: this sandbox does not export event-level
+prediction labels independently from its `suspicious` ground-truth labels, and
+alert evidence is selected from suspicious events. Reporting zero would
+therefore be structurally misleading. The benign control still verifies that
+the configured rules emit no alerts or recommendations for that scenario. The paired model is
 deterministic and adaptive output may be equal to or worse than static output.
 The chart and metrics describe only this generator; they do not demonstrate
 real-world effectiveness.

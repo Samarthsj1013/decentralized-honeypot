@@ -155,7 +155,6 @@ function finalizeRun(input, events, { runId, seed, startedAt, elapsedMs = 0 }) {
   const syntheticDecoys = observedDecoys.map((category) => ({ id: `${runId}-decoy-${category}`, category, syntheticOnly: true, enabled: false }));
   const bundleValidation = validateSandboxBundle({ schemaVersion: 1, syntheticOnly: true, decoys: syntheticDecoys }, runId);
   const benignEvents = events.filter((event) => !event.suspicious);
-  const falsePositiveEvents = [...new Set(alerts.flatMap((alert) => alert.eventIds))].filter((eventId) => events.some((event) => event.id === eventId && !event.suspicious));
   const selectedStrategy = input.strategy === "static" ? "static_file_decoy" : authAttempts > 0 && events.some((event) => event.eventType === "database_decoy_interaction") ? "expanded_decoy_path" : authAttempts > 0 ? "credential_decoy" : serviceLabels.length > 0 ? "service_decoy" : "neutral_response";
   return {
     runId, scenario: input.scenario, scenarioLabel: SCENARIOS[input.scenario].label, intensity: input.intensity,
@@ -165,8 +164,12 @@ function finalizeRun(input, events, { runId, seed, startedAt, elapsedMs = 0 }) {
     sensorCategories: sources, ruleCoverage: alerts.length, bundleValidation, bundleValidationFailures: bundleValidation.valid ? 0 : 1,
     strategyChanges: input.strategy === "adaptive" && selectedStrategy !== "neutral_response" ? 1 : 0,
     benignEvents: benignEvents.length,
-    falsePositiveEvents: falsePositiveEvents.length,
-    falsePositiveRate: benignEvents.length ? Number((falsePositiveEvents.length / benignEvents.length).toFixed(3)) : null,
+    // Alert evidence references are selected from suspicious source events,
+    // so they cannot establish an event-level false positive. Keep the
+    // denominator visible, but fail closed on the rate rather than reporting
+    // a structurally guaranteed zero.
+    falsePositiveEvents: null,
+    falsePositiveRate: null,
     summary: `${events.length} of ${input.interactionCount} synthetic interactions were generated; ${alerts.length} rule alert(s), ${incidents.length} correlated incident(s), and ${observedDecoys.length} decoy category/categories observed.`,
   };
 }
@@ -252,7 +255,7 @@ export function compareSandboxStrategies(input, repetitions = 3) {
   const summarize = (strategy) => {
     const samples = runs.filter((run) => run.strategy === strategy);
     const average = (select) => Number((samples.reduce((sum, run) => sum + select(run), 0) / samples.length).toFixed(2));
-    const falsePositiveRates = samples.map((run) => run.benignEvents ? run.falsePositiveEvents / run.benignEvents : null).filter((value) => value !== null);
+    const falsePositiveRates = samples.map((run) => run.falsePositiveRate).filter(Number.isFinite);
     return {
       strategy, repetitions: samples.length, meanInteractionsRecorded: average((run) => run.recorded),
       meanDecoyCoverage: average((run) => run.decoyCoverage), meanAlertCount: average((run) => run.alerts.length),
