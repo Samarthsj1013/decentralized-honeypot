@@ -12,6 +12,9 @@ coverage/
 *.log
 experiments/results/*
 !experiments/results/.gitkeep
+!experiments/results/cyberlab_2019-05-18_summary.json
+!experiments/results/profile_model_evaluation_20261127.json
+!experiments/results/paired_deception_20261127_retimed.json
 backend/data/
 # Local application databases
 data/

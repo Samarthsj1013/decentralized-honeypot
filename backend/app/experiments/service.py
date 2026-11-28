@@ -28,7 +28,7 @@ from app.incidents.service import IncidentService
 from app.incidents.storage import SQLiteIncidentStorage
 from app.profiling.features import extract_features
 from app.profiling.models_ml import train_profile_models
-from app.profiling.service import RECOMMENDATION_POLICY
+from app.profiling.service import AttackerProfileService, RECOMMENDATION_POLICY
 from app.simulation.adversary import SCENARIOS, SyntheticEvent, generate_scenario
 
 
@@ -42,7 +42,7 @@ METRIC_DEFINITIONS = {
     "scenario_completion_rate": "Completed scenario-mode repetitions divided by requested scenario-mode repetitions.",
     "adaptation_frequency": "Adaptive runs with a selected non-neutral policy divided by adaptive runs.",
     "adaptation_effectiveness": "Adaptive minus baseline detection coverage in percentage points; only when both modes are included.",
-    "average_event_processing_ms": "Measured local processing wall time divided by events processed; excludes model training.",
+    "average_event_processing_ms": "Measured event-loop wall time divided by events processed; includes per-event local incident correlation, excludes model training, scenario generation/classification, temporary incident-store setup, and experiment-result persistence.",
     "execution_time_seconds": "Observed wall time for the experiment request; machine-dependent.",
     "peak_memory_bytes": "Unavailable: process memory is not measured by this harness.",
     "simulated_engagement_rate": "Completed synthetic runs with a simulated non-abandon reaction divided by completed runs; based on explicit seeded reaction probabilities, not observed attackers.",
@@ -101,10 +101,12 @@ class ExperimentService:
                 scenario_seed = (request.seed + scenario_index * 100003 + repetition * 997) % (2**32)
                 generated = generate_scenario(scenario, scenario_seed)
                 features = extract_features(_as_events(generated), window_seconds=86400, as_of=generated[-1].occurred_at) if generated else {}
-                profile_category = str(model_bundle["classifier"].predict([[float(features.get(name, 0)) for name in model_bundle["metadata"]["feature_columns"]]])[0]) if generated else "unknown"
+                raw_profile_category = str(model_bundle["classifier"].predict([[float(features.get(name, 0)) for name in model_bundle["metadata"]["feature_columns"]]])[0]) if generated else "unknown"
+                profile_category = AttackerProfileService._classification_with_evidence_gate(
+                    raw_profile_category, features, len(generated)
+                )
                 policy = RECOMMENDATION_POLICY.get(profile_category, RECOMMENDATION_POLICY["unknown"])
                 for mode in request.modes:
-                    row_started = perf_counter()
                     strategy = "static_baseline" if mode == "baseline" else policy["strategy"]
                     reason = None if mode == "baseline" else f"Local profile predicted {profile_category}; existing recommendation policy selected {strategy}. No live policy was changed."
                     mode_events = generated
@@ -139,7 +141,7 @@ class ExperimentService:
                     try:
                         with TemporaryDirectory(prefix="honeypot-experiment-incident-") as isolated:
                             incident_detector = IncidentService(SQLiteIncidentStorage(Path(isolated) / "incidents.sqlite3"))
-                            result, elapsed = self._evaluate_scenario(scenario, repetition, scenario_seed, mode_events, mode, strategy, reason, profile_category if mode != "baseline" else None, thresholds, row_started, incident_detector)
+                            result, elapsed = self._evaluate_scenario(scenario, repetition, scenario_seed, mode_events, mode, strategy, reason, profile_category if mode != "baseline" else None, thresholds, incident_detector)
                     except Exception as exc:
                         result = ScenarioResult(
                             scenario=scenario, repetition=repetition, seed=scenario_seed,
@@ -214,9 +216,12 @@ class ExperimentService:
         return result
 
     @staticmethod
-    def _evaluate_scenario(scenario, repetition, seed, events, mode, strategy, reason, category, thresholds, started, incident_detector=None):
+    def _evaluate_scenario(scenario, repetition, seed, events, mode, strategy, reason, category, thresholds, incident_detector=None):
         failed_auth = 0; ports = set(); commands = 0; protocols = set(); sensors = set()
         predictions: list[bool] = []; first_detection = None; incident_found = False
+        # Start only after per-run incident storage has been initialized. This
+        # measures the event-processing loop, including local correlation.
+        started = perf_counter()
         for event in events:
             if event.attributes.get("authentication_outcome") == "failed": failed_auth += 1
             if event.destination_port is not None: ports.add(event.destination_port)
@@ -240,7 +245,7 @@ class ExperimentService:
         tp = sum(pred and event.suspicious for pred, event in zip(predictions, events))
         fp = sum(pred and not event.suspicious for pred, event in zip(predictions, events))
         fn = suspicious - tp
-        # Timing is measured for rule processing only, without sleeping or I/O.
+        # Local incident correlation may perform SQLite work inside this loop.
         elapsed = (perf_counter() - started) * 1000
         return ScenarioResult(
             scenario=scenario, repetition=repetition, seed=seed,

@@ -7,6 +7,7 @@ import os
 import sqlite3
 from pathlib import Path
 from threading import RLock
+from contextlib import contextmanager
 
 from app.experiments.models import ExperimentResult
 
@@ -19,11 +20,19 @@ class ExperimentStorage:
         self._lock = RLock()
         self._initialized = False
 
+    @contextmanager
     def _connect(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         db = sqlite3.connect(str(self.path), timeout=30)
         db.row_factory = sqlite3.Row
-        return db
+        try:
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
     def _init(self, db):
         if not self._initialized:

@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-11-27T14:00:33.893063+00:00",
+  "dataset": {
+    "name": "CyberLab honeynet dataset, one daily Cowrie export",
+    "record_url": "https://zenodo.org/records/3687527",
+    "doi": "10.5281/zenodo.3687527",
+    "license": "CC-BY-4.0",
+    "file": "cyberlab_2019-05-18.json.gz",
+    "download_url": "https://zenodo.org/api/records/3687527/files/cyberlab_2019-05-18.json.gz/content",
+    "published_md5": "6428bc0c9e4c83eecd78a1c01728f171",
+    "observed_md5": "6428bc0c9e4c83eecd78a1c01728f171",
+    "observed_sha256": "b681316de5ff58f8cae385fd4a2232d93ccdeb0b117ef58668195df5797d9c45",
+    "provenance": "Cowrie logs collected by the University of Ljubljana CyberLab honeynet from May 2019 to February 2020; source record describes approximately 50 university/company nodes and pseudonymized honeypot destination IPs.",
+    "selection": "Smallest archive file in the record at metadata review time; a single date sample, not a representative or independent test set."
+  },
+  "input_sessions": 7465,
+  "processed_sessions": 7465,
+  "duplicate_sessions_ignored": 0,
+  "raw_event_count": 35742,
+  "processed_event_count": 35742,
+  "event_type_counts": {
+    "cowrie_command_attempt": 6,
+    "cowrie_file_download": 29,
+    "cowrie_login_failed": 2023,
+    "cowrie_login_success": 5056,
+    "cowrie_other": 8338,
+    "cowrie_session_closed": 7467,
+    "cowrie_session_connected": 7467,
+    "cowrie_session_metadata": 5356
+  },
+  "feature_schema_columns": [
+    "event_count",
+    "failed_auth_count",
+    "successful_auth_count",
+    "unique_usernames_attempted",
+    "session_count",
+    "command_attempt_count",
+    "unique_destination_ports",
+    "connection_count",
+    "connections_per_minute",
+    "suricata_alert_count",
+    "alert_severity_low",
+    "alert_severity_medium",
+    "alert_severity_high",
+    "alert_severity_critical",
+    "mean_session_duration_seconds",
+    "session_duration_available",
+    "protocol_ssh_count",
+    "protocol_tcp_count",
+    "protocol_udp_count",
+    "protocol_icmp_count",
+    "protocol_other_count",
+    "unique_protocol_count",
+    "sensor_count",
+    "mean_inter_attempt_seconds",
+    "inter_attempts_available",
+    "behavioral_diversity",
+    "incident_count",
+    "incident_severity_high_count",
+    "incident_severity_critical_count",
+    "incident_rule_count"
+  ],
+  "labels_available": false,
+  "model_review": {
+    "model_version": "attacker-profile-synthetic-v1",
+    "training_source": "explicit_synthetic_labeled_dataset",
+    "training_samples": 480,
+    "training_seed": 2026,
+    "raw_synthetic_model_vote_counts_unlabeled": {
+      "authentication_probing": 70,
+      "suspicious_session": 7395
+    },
+    "evidence_gated_category_counts_unlabeled": {
+      "authentication_probing": 69,
+      "suspicious_session": 1,
+      "unknown": 7395
+    },
+    "maximum_vote_fraction_descriptive_only": {
+      "median": 0.3625,
+      "p05": 0.3625,
+      "p95": 0.50625
+    },
+    "accuracy_precision_recall_f1": "Unavailable: the dataset has no trusted behavioral ground-truth labels.",
+    "interpretation": "Model output counts are an unlabeled domain review only. The synthetic-trained model vote fraction is not calibrated confidence, and no category count is a verified attack label."
+  }
+}

@@ -8,7 +8,7 @@ from app.experiments.service import ExperimentService
 from app.experiments.storage import ExperimentStorage
 from app.ledger.service import LedgerVerification, event_ledger
 from app.main import app
-from app.security import validate_cors_origins
+from app.security import configured_cors_origins, validate_cors_origins
 
 client = TestClient(app)
 READ_TOKEN = "read-only-test-token-that-is-long-enough-123456"
@@ -229,6 +229,35 @@ def test_credentialed_cors_requires_exact_http_origins():
             validate_cors_origins([invalid])
 
 
+def test_production_cors_requires_explicit_https_origins(monkeypatch):
+    monkeypatch.setenv("HONEYPOT_ENV", "production")
+    monkeypatch.delenv("HONEYPOT_CORS_ORIGINS", raising=False)
+    with pytest.raises(RuntimeError, match="explicitly list HTTPS origins"):
+        configured_cors_origins()
+
+    monkeypatch.setenv("HONEYPOT_CORS_ORIGINS", "http://dashboard.example")
+    with pytest.raises(RuntimeError, match="must use HTTPS"):
+        configured_cors_origins()
+
+    monkeypatch.setenv("HONEYPOT_CORS_ORIGINS", "https://dashboard.example")
+    assert configured_cors_origins() == ["https://dashboard.example"]
+
+
+def test_admin_session_rejects_http_origin_in_production(monkeypatch):
+    monkeypatch.setenv("HONEYPOT_ENV", "production")
+    monkeypatch.setenv("HONEYPOT_CORS_ORIGINS", "http://dashboard.example")
+    monkeypatch.setenv("HONEYPOT_API_ADMIN_TOKEN", ADMIN_TOKEN)
+    monkeypatch.setenv("HONEYPOT_SESSION_COOKIE_SECURE", "true")
+    with TestClient(app) as session_client:
+        response = session_client.post(
+            "/api/v1/auth/session",
+            json={"admin_token": ADMIN_TOKEN},
+            headers={"Origin": "http://dashboard.example"},
+        )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Request origin is not allowed"
+
+
 def test_admin_login_requires_secure_cookie_in_production(monkeypatch):
     monkeypatch.setenv("HONEYPOT_ENV", "production")
     monkeypatch.setenv("HONEYPOT_API_ADMIN_TOKEN", ADMIN_TOKEN)
@@ -294,6 +323,27 @@ def test_network_node_dashboard_proxy_keeps_node_token_server_side(monkeypatch):
     assert result.json() == {"node": {"node_id": "test-node"}}
     assert observed["url"] == "http://127.0.0.1:8101/v1/dashboard/summary"
     assert observed["headers"]["Authorization"].endswith("node-dashboard-server-token-value-123456")
+
+
+def test_network_node_dashboard_rejects_remote_plain_http_before_forwarding_token(monkeypatch):
+    monkeypatch.setenv("HONEYPOT_NODE_DASHBOARD_URL", "http://node.example.test")
+    monkeypatch.setenv("HONEYPOT_NODE_DASHBOARD_TOKEN", "node-dashboard-server-token-value-123456")
+    with TestClient(app) as dashboard_client:
+        response = dashboard_client.get(
+            "/api/v1/network-node/dashboard",
+            headers={"Authorization": f"Bearer {READ_TOKEN}"},
+        )
+    assert response.status_code == 503
+    assert "URL configuration is invalid" in response.json()["detail"]
+
+
+def test_backend_service_url_policy_keeps_remote_bearer_endpoints_tls_only():
+    assert routes._safe_backend_service_url("https://node.example.test") is True
+    assert routes._safe_backend_service_url("http://127.0.0.1:8101") is True
+    assert routes._safe_backend_service_url("http://[::1]:8101") is True
+    assert routes._safe_backend_service_url("http://node.example.test") is False
+    assert routes._safe_backend_service_url("http://user:secret@node.example.test") is False
+    assert routes._safe_backend_service_url("https://node.example.test/?token=secret") is False
 
 
 def test_sensor_ingestion_intel_projection_is_opt_in_bounded_and_secret_free(monkeypatch):

@@ -50,6 +50,45 @@ def make_node(tmp_path, node_id, key_id, private_key, *, trusted=None, peers=Non
     return ReplicationNode(config)
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://peer.example.test",
+        "http://user:password@peer.example.test",
+        "http://peer.example.test/path?token=secret",
+    ],
+)
+def test_remote_peer_urls_must_use_https_and_cannot_embed_credentials(tmp_path, url):
+    with pytest.raises(ValueError, match="HTTPS remotely"):
+        NodeConfig(
+            node_id="node-a",
+            key_id="node-a-key",
+            private_key=Ed25519PrivateKey.generate(),
+            database_path=tmp_path / "node-a.sqlite3",
+            admin_token=ADMIN_A,
+            trusted_publishers={
+                "node-b": TrustedPeer("node-b-key", Ed25519PrivateKey.generate().public_key(), TOKEN_B)
+            },
+            peers={"node-b": PeerEndpoint(url, TOKEN_A)},
+        )
+
+
+@pytest.mark.parametrize("url", ["http://127.0.0.1:8101", "http://[::1]:8101", "https://peer.example.test"])
+def test_loopback_http_and_remote_https_peer_urls_are_allowed(tmp_path, url):
+    config = NodeConfig(
+        node_id="node-a",
+        key_id="node-a-key",
+        private_key=Ed25519PrivateKey.generate(),
+        database_path=tmp_path / "node-a.sqlite3",
+        admin_token=ADMIN_A,
+        trusted_publishers={
+            "node-b": TrustedPeer("node-b-key", Ed25519PrivateKey.generate().public_key(), TOKEN_B)
+        },
+        peers={"node-b": PeerEndpoint(url, TOKEN_A)},
+    )
+    assert config.peers["node-b"].base_url == url
+
+
 def observation(node_id, key_id):
     now = datetime.now(timezone.utc)
     return ThreatIntelRecord(
@@ -73,7 +112,7 @@ def test_two_independent_nodes_exchange_signed_intelligence_over_http(tmp_path):
     node_a = make_node(
         tmp_path, "node-a", "node-a-key", key_a,
         trusted={"node-b": TrustedPeer("node-b-key", key_b.public_key(), TOKEN_B)},
-        peers={"node-b": PeerEndpoint("http://node-b.test", TOKEN_A)},
+        peers={"node-b": PeerEndpoint("https://node-b.test", TOKEN_A)},
     )
     node_b = make_node(
         tmp_path, "node-b", "node-b-key", key_b,
@@ -112,7 +151,7 @@ def test_http_import_rejects_unknown_publisher_wrong_token_and_tampering(tmp_pat
     node_a = make_node(
         tmp_path, "node-a", "node-a-key", key_a,
         trusted={"node-b": TrustedPeer("node-b-key", key_b.public_key(), TOKEN_B)},
-        peers={"node-b": PeerEndpoint("http://node-b.test", TOKEN_A)},
+        peers={"node-b": PeerEndpoint("https://node-b.test", TOKEN_A)},
     )
     node_b = make_node(
         tmp_path, "node-b", "node-b-key", key_b,
@@ -142,7 +181,7 @@ def test_duplicate_delivery_is_idempotent_and_changed_record_id_reuse_is_rejecte
     node_a = make_node(
         tmp_path, "node-a", "node-a-key", key_a,
         trusted={"node-b": TrustedPeer("node-b-key", key_b.public_key(), TOKEN_B)},
-        peers={"node-b": PeerEndpoint("http://node-b.test", TOKEN_A)},
+        peers={"node-b": PeerEndpoint("https://node-b.test", TOKEN_A)},
     )
     node_b = make_node(
         tmp_path, "node-b", "node-b-key", key_b,
@@ -215,7 +254,7 @@ def test_peer_endpoint_must_return_the_configured_node_identity(tmp_path):
     node_a = make_node(
         tmp_path, "node-a", "node-a-key", key_a,
         trusted={"node-b": TrustedPeer("node-b-key", Ed25519PrivateKey.generate().public_key(), TOKEN_B)},
-        peers={"node-b": PeerEndpoint("http://node-b.test", TOKEN_A)},
+        peers={"node-b": PeerEndpoint("https://node-b.test", TOKEN_A)},
     )
     wrong_node = make_node(
         tmp_path, "node-c", "node-c-key", key_c,
@@ -254,7 +293,7 @@ def test_reachable_peer_rejection_is_reported_as_degraded_not_unavailable(tmp_pa
         "node-a-key",
         key_a,
         trusted={"node-b": TrustedPeer("node-b-key", Ed25519PrivateKey.generate().public_key(), TOKEN_B)},
-        peers={"node-b": PeerEndpoint("http://node-b.test", TOKEN_A)},
+        peers={"node-b": PeerEndpoint("https://node-b.test", TOKEN_A)},
     )
     envelope = node_a.publish(observation("node-a", "node-a-key"))
 

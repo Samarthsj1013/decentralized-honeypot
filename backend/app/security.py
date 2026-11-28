@@ -55,19 +55,17 @@ def _request_origin_allowed(request: Request) -> bool:
     origin = request.headers.get("origin")
     if not origin:
         return True
-    allowed = {
-        item.strip().rstrip("/")
-        for item in os.getenv(
-            "HONEYPOT_CORS_ORIGINS",
-            "http://127.0.0.1:5173,http://localhost:5173",
-        ).split(",")
-        if item.strip()
-    }
+    try:
+        allowed = configured_cors_origins()
+    except RuntimeError:
+        return False
     return origin.rstrip("/") in allowed
 
 
-def validate_cors_origins(origins: list[str]) -> list[str]:
+def validate_cors_origins(origins: list[str], *, production: bool = False) -> list[str]:
     """Reject wildcard or non-origin CORS values before enabling credentialed cookies."""
+    if production and not origins:
+        raise RuntimeError("HONEYPOT_CORS_ORIGINS must explicitly list HTTPS origins in production")
     for origin in origins:
         parsed = urlsplit(origin)
         if (
@@ -76,7 +74,21 @@ def validate_cors_origins(origins: list[str]) -> list[str]:
             or parsed.query or parsed.fragment
         ):
             raise RuntimeError("HONEYPOT_CORS_ORIGINS must contain exact HTTP(S) origins; wildcard values are not allowed")
+        if production and parsed.scheme != "https":
+            raise RuntimeError("Production HONEYPOT_CORS_ORIGINS must use HTTPS")
     return origins
+
+
+def configured_cors_origins() -> list[str]:
+    """Return validated configured origins, with loopback defaults only in development."""
+    production = os.getenv("HONEYPOT_ENV", "development").strip().casefold() == "production"
+    configured = os.getenv("HONEYPOT_CORS_ORIGINS")
+    if production and (configured is None or not configured.strip()):
+        raise RuntimeError("HONEYPOT_CORS_ORIGINS must explicitly list HTTPS origins in production")
+    if configured is None:
+        configured = "" if production else "http://127.0.0.1:5173,http://localhost:5173"
+    origins = [origin.strip() for origin in configured.split(",") if origin.strip()]
+    return validate_cors_origins(origins, production=production)
 
 
 def _secure_cookie() -> bool:

@@ -3,6 +3,7 @@ import hmac
 import json
 import os
 from urllib.parse import urlsplit
+from ipaddress import ip_address
 
 import httpx
 
@@ -103,6 +104,32 @@ from app.telemetry.service import MAX_TELEMETRY_BODY_BYTES, TelemetryIngestionSe
 router = APIRouter(prefix="/api/v1")
 
 
+def _safe_backend_service_url(value: str) -> bool:
+    """Avoid forwarding backend-held bearer tokens over remote cleartext HTTP."""
+    try:
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+        ):
+            return False
+        if parsed.scheme == "https":
+            return True
+        host = parsed.hostname.casefold().rstrip(".")
+        if host == "localhost":
+            return True
+        try:
+            return ip_address(host).is_loopback
+        except ValueError:
+            return False
+    except ValueError:
+        return False
+
+
 async def _evaluate_intelligence_collection(event: HoneypotEvent) -> dict:
     """Optionally send only the approved event identity projection to a local node collector."""
     base_url = os.getenv("HONEYPOT_INTEL_COLLECTOR_URL", "").strip().rstrip("/")
@@ -111,8 +138,7 @@ async def _evaluate_intelligence_collection(event: HoneypotEvent) -> dict:
         return {"status": "disabled"}
     parsed = urlsplit(base_url)
     if (
-        not base_url or len(token) < 32 or parsed.scheme not in {"http", "https"}
-        or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment
+        not base_url or len(token) < 32 or not _safe_backend_service_url(base_url)
     ):
         return {"status": "misconfigured"}
     if event.source != "external" or not event.sensor_id or not event.source_event_id or not event.source_ip:
@@ -154,7 +180,7 @@ async def network_node_dashboard():
     if not base_url or len(token) < 32:
         raise HTTPException(503, "Network node dashboard is not configured on the backend")
     parsed = urlsplit(base_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
+    if not _safe_backend_service_url(base_url):
         raise HTTPException(503, "Network node dashboard URL configuration is invalid")
     try:
         async with httpx.AsyncClient(timeout=3.0, follow_redirects=False) as client:

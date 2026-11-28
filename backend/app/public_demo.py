@@ -127,8 +127,125 @@ class IntelligenceSummary(StrictModel):
     note: str = Field(min_length=1, max_length=300)
 
 
+class DatasetReview(StrictModel):
+    name: Literal["CyberLab Cowrie dataset, one daily export"]
+    record_url: Literal["https://zenodo.org/records/3687527"]
+    license: Literal["CC-BY-4.0"]
+    sample_file: Literal["cyberlab_2019-05-18.json.gz"]
+    file_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    processed_sessions: int = Field(ge=1)
+    processed_events: int = Field(ge=1)
+    trusted_behavior_labels_available: Literal[False]
+    metrics_note: str = Field(min_length=1, max_length=300)
+
+
+class HoldoutModelMetric(StrictModel):
+    model: Literal["random_forest", "decision_tree", "logistic_regression", "evidence_rules"]
+    accuracy: float = Field(ge=0, le=1)
+    macro_f1: float = Field(ge=0, le=1)
+    macro_false_positive_rate_ovr: float = Field(ge=0, le=1)
+    macro_false_negative_rate_ovr: float = Field(ge=0, le=1)
+
+
+class FeatureOverlapAudit(StrictModel):
+    train_unique_vectors: int = Field(ge=1)
+    validation_unique_vectors: int = Field(ge=1)
+    test_unique_vectors: int = Field(ge=1)
+    train_validation_shared: int = Field(ge=0)
+    train_test_shared: int = Field(ge=0)
+    validation_test_shared: int = Field(ge=0)
+    shared_label_conflicts: int = Field(ge=0)
+
+
+class SyntheticHoldoutReview(StrictModel):
+    label_source: Literal["synthetic scenario generator"]
+    category_labels_are_ground_truth_for_real_telemetry: Literal[False]
+    samples_per_category_per_split: int = Field(ge=1, le=10000)
+    train_seed: int = Field(ge=0, le=4294967295)
+    validation_seed: int = Field(ge=0, le=4294967295)
+    test_seed: int = Field(ge=0, le=4294967295)
+    train_rows: int = Field(ge=1)
+    validation_rows: int = Field(ge=1)
+    test_rows: int = Field(ge=1)
+    refit_rows: int = Field(ge=1)
+    candidates: list[HoldoutModelMetric] = Field(min_length=1, max_length=4)
+    feature_overlap: FeatureOverlapAudit
+    interpretation: str = Field(min_length=1, max_length=400)
+
+
+class SyntheticChallengeReview(StrictModel):
+    label_source: Literal["latent synthetic dominant scenario"]
+    samples_per_category: int = Field(ge=20, le=2000)
+    train_seed: int = Field(ge=0, le=4294967295)
+    test_seed: int = Field(ge=0, le=4294967295)
+    train_rows: int = Field(ge=1)
+    test_rows: int = Field(ge=1)
+    unique_test_feature_rows: int = Field(ge=1)
+    candidates: list[HoldoutModelMetric] = Field(min_length=1, max_length=4)
+    interpretation: str = Field(min_length=1, max_length=400)
+
+
+class PairedContrast(StrictModel):
+    metric: Literal["engagement", "detection_coverage"]
+    comparison: Literal["baseline_to_adaptive", "adaptive_to_closed_loop", "baseline_to_closed_loop"]
+    paired_runs: int = Field(ge=1, le=100)
+    mean_delta: float = Field(ge=-1, le=1)
+    ci_95_low: float = Field(ge=-1, le=1)
+    ci_95_high: float = Field(ge=-1, le=1)
+
+
+class PairedModeReview(StrictModel):
+    mode: Literal["baseline", "adaptive", "closed_loop"]
+    runs_requested: int = Field(ge=1, le=100)
+    runs_completed: int = Field(ge=0, le=100)
+    events_generated: int = Field(ge=0)
+    true_positives: int = Field(ge=0)
+    false_positives: int = Field(ge=0)
+    false_negatives: int = Field(ge=0)
+    detection_coverage: float | None = Field(default=None, ge=0, le=1)
+    false_positive_rate: float | None = Field(default=None, ge=0, le=1)
+    false_negative_rate: float | None = Field(default=None, ge=0, le=1)
+    incident_detection_rate: float | None = Field(default=None, ge=0, le=1)
+    median_detection_latency_seconds: float | None = Field(default=None, ge=0)
+    adaptation_frequency: float | None = Field(default=None, ge=0, le=1)
+    average_event_processing_ms: float | None = Field(default=None, ge=0)
+    simulated_engagement_rate: float | None = Field(default=None, ge=0, le=1)
+    mean_synthetic_interaction_depth: float | None = Field(default=None, ge=0)
+    median_virtual_session_duration_seconds: float | None = Field(default=None, ge=0)
+    mean_strategy_reward: float | None = Field(default=None, ge=-1, le=1)
+
+
+class PairedExperimentReview(StrictModel):
+    seed: int = Field(ge=0, le=4294967295)
+    scenario_count: int = Field(ge=1, le=10)
+    repetitions: int = Field(ge=1, le=10)
+    modes: list[PairedModeReview] = Field(min_length=2, max_length=3)
+    paired_contrasts: list[PairedContrast] = Field(default_factory=list, max_length=6)
+    interpretation: str = Field(min_length=1, max_length=400)
+
+
+class NodeReplicationRun(StrictModel):
+    node_count: Literal[3, 4, 5]
+    result: Literal["passed"]
+    trusted_imports_pending: int = Field(ge=1, le=10)
+    duplicate_delivery_idempotent: Literal[True]
+    tampered_record_rejected: Literal[True]
+    downtime_detected: Literal[True]
+    restart_recovery_passed: Literal[True]
+    untrusted_publisher_rejected: bool | None = None
+    transfer_latency_samples_ms: list[float] = Field(min_length=1, max_length=10)
+
+
+class ResearchSummary(StrictModel):
+    dataset_review: DatasetReview
+    synthetic_holdout: SyntheticHoldoutReview
+    synthetic_challenge: SyntheticChallengeReview
+    paired_experiment: PairedExperimentReview
+    node_replication_runs: list[NodeReplicationRun] = Field(default_factory=list, max_length=3)
+
+
 class DemoSnapshot(StrictModel):
-    schema_version: Literal[1]
+    schema_version: Literal[3]
     label: Literal["Placement Demonstration — Synthetic Security Data"]
     notice: str = Field(min_length=1, max_length=400)
     updated_at: datetime
@@ -140,6 +257,7 @@ class DemoSnapshot(StrictModel):
     profiles: list[ProfileRow] = Field(max_length=20)
     recommendations: list[RecommendationRow] = Field(max_length=20)
     intelligence: IntelligenceSummary
+    research: ResearchSummary
 
 
 def _database_path(explicit_path: str | Path | None = None) -> Path:
@@ -224,7 +342,7 @@ def _read_store(path: Path) -> dict:
             row = db.execute("SELECT schema_version,payload,digest FROM public_demo_snapshot WHERE singleton=1").fetchone()
     except sqlite3.Error as exc:
         raise RuntimeError("Public demo snapshot is temporarily unavailable") from exc
-    if row is None or row[0] != 1 or hashlib.sha256(row[1].encode("utf-8")).hexdigest() != row[2]:
+    if row is None or row[0] != 3 or hashlib.sha256(row[1].encode("utf-8")).hexdigest() != row[2]:
         raise RuntimeError("Public demo snapshot integrity check failed")
     try:
         return DemoSnapshot.model_validate_json(row[1]).model_dump(mode="json")

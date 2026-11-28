@@ -211,6 +211,34 @@ def _normalized_indicator(record: ThreatIntelRecord) -> str:
     return record.indicator.rstrip(".").casefold()
 
 
+def _safe_peer_url(value: str) -> bool:
+    """Require TLS for remote peers; permit plain HTTP only on loopback."""
+    from urllib.parse import urlsplit
+
+    try:
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+        ):
+            return False
+        if parsed.scheme == "https":
+            return True
+        host = parsed.hostname.casefold().rstrip(".")
+        if host == "localhost":
+            return True
+        try:
+            return ip_address(host).is_loopback
+        except ValueError:
+            return False
+    except ValueError:
+        return False
+
+
 @dataclass(frozen=True)
 class NodeConfig:
     node_id: str
@@ -253,8 +281,8 @@ class NodeConfig:
         for peer_id, endpoint in self.peers.items():
             if peer_id not in self.trusted_publishers:
                 raise ValueError("Outbound peers must also have an explicit trusted publisher key")
-            if not endpoint.base_url.startswith(("http://", "https://")) or len(endpoint.bearer_token) < 32:
-                raise ValueError("Peer URL and bearer token are required")
+            if not _safe_peer_url(endpoint.base_url) or len(endpoint.bearer_token) < 32:
+                raise ValueError("Peer URL must use HTTPS remotely (HTTP is allowed only for loopback) and bearer token must be at least 32 characters")
 
 
 class NodeStorage:

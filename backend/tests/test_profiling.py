@@ -192,6 +192,87 @@ def test_synthetic_dataset_and_training_are_reproducible_and_labeled_only_synthe
         validate_model_bundle(broken)
 
 
+def _profile_for_behavior(events_to_add, tmp_path, models):
+    now = datetime.now(timezone.utc)
+    store = EventStore()
+    for index, (kind, attrs, protocol) in enumerate(events_to_add):
+        store.add_event(
+            external_event(
+                f"behavior-{index}", kind, now + timedelta(seconds=index),
+                attrs=attrs, protocol=protocol,
+            )
+        )
+    service = AttackerProfileService(
+        store,
+        SQLiteProfileStorage(tmp_path / "behavior-profile.sqlite3"),
+        model_bundle=models,
+    )
+    profiles, _ = service.recompute(3600)
+    return profiles[0], service
+
+
+def test_successful_only_authentication_is_unknown_and_not_credential_probing(tmp_path, models):
+    records = []
+    for session in range(3):
+        records.extend([
+            ("cowrie_session_connected", {"session_id": f"session-{session}"}, "ssh"),
+            ("cowrie_login_success", {"authentication_outcome": "success", "username_ref": f"user-ref-{session}"}, "ssh"),
+            ("cowrie_session_closed", {}, "ssh"),
+        ])
+    records.extend(("cowrie_client_version", {}, "ssh") for _ in range(6))
+    profile, service = _profile_for_behavior(records, tmp_path, models)
+
+    assert profile.observation_count == 15
+    assert profile.features["successful_auth_count"] == 3
+    assert profile.features["failed_auth_count"] == 0
+    assert profile.features["command_attempt_count"] == 0
+    assert profile.classification == "unknown"
+    recommendation = service.list_recommendations()[0][0]
+    assert recommendation.profile_category == "unknown"
+    assert recommendation.proposed_strategy == "neutral_response"
+    assert recommendation.expected_scenario is None
+
+
+def test_authentication_probing_gate_requires_failed_burst_and_distinct_usernames():
+    predicted = "authentication_probing"
+    assert AttackerProfileService._classification_with_evidence_gate(
+        predicted,
+        {"failed_auth_count": 3, "unique_usernames_attempted": 2},
+        observation_count=5,
+    ) == "authentication_probing"
+    assert AttackerProfileService._classification_with_evidence_gate(
+        predicted,
+        {"failed_auth_count": 0, "successful_auth_count": 8, "unique_usernames_attempted": 8},
+        observation_count=16,
+    ) == "unknown"
+    assert AttackerProfileService._classification_with_evidence_gate(
+        predicted,
+        {"failed_auth_count": 2, "unique_usernames_attempted": 2},
+        observation_count=4,
+    ) == "unknown"
+
+
+@pytest.mark.parametrize(
+    "predicted,features,observations,expected",
+    [
+        ("authentication_probing", {"failed_auth_count": 3, "unique_usernames_attempted": 2}, 2, "unknown"),
+        ("reconnaissance", {"connection_count": 5, "unique_destination_ports": 2}, 8, "unknown"),
+        ("repeated_connection", {"event_count": 12, "connection_count": 9}, 12, "unknown"),
+        ("suspicious_session", {"command_attempt_count": 0}, 10, "unknown"),
+        ("multi_protocol", {"unique_protocol_count": 2}, 10, "unknown"),
+        ("multi_protocol", {"unique_protocol_count": 4}, 10, "multi_protocol"),
+        ("unseen_model_label", {"event_count": 99}, 99, "unknown"),
+        ("unknown", {"event_count": 99}, 99, "unknown"),
+    ],
+)
+def test_classification_gate_abstains_without_category_specific_evidence(
+    predicted, features, observations, expected
+):
+    assert AttackerProfileService._classification_with_evidence_gate(
+        predicted, features, observations
+    ) == expected
+
+
 def test_training_rejects_insufficient_data():
     with pytest.raises(ValueError, match="samples_per_category"):
         generate_synthetic_dataset(2)

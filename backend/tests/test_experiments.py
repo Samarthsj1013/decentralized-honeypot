@@ -1,11 +1,10 @@
 from datetime import datetime, timezone
-from time import perf_counter
-
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.experiments.models import ExperimentRequest
+import app.experiments.service as experiment_service
 from app.experiments.service import ExperimentService
 from app.experiments.storage import ExperimentStorage
 from app.experiments.closed_loop import (
@@ -24,6 +23,20 @@ def test_all_scenario_events_are_normalized_and_seed_reproducible():
         assert first
         assert all(item.event_id.startswith("syn-") and item.source_ip == "198.51.100.10" for item in first)
         assert all(item.occurred_at.tzinfo == timezone.utc for item in first)
+
+
+def test_experiment_storage_releases_sqlite_file_after_run(tmp_path):
+    database = tmp_path / "closeable-experiments.sqlite3"
+    service = ExperimentService(ExperimentStorage(database))
+    result = service.run(ExperimentRequest(
+        experiment_id="closeable-experiment", scenarios=["reconnaissance"],
+        repetitions=1, seed=31, modes=["baseline"],
+    ))
+
+    assert database.exists()
+    assert service.storage.get(result.experiment_id) == result
+    database.unlink()
+    assert not database.exists()
 
 
 def test_experiment_pairs_identical_scenario_seeds_and_persists_reports(tmp_path):
@@ -141,7 +154,7 @@ def test_metric_rates_are_calculated_from_ground_truth_and_predictions(tmp_path)
     now = datetime(2026, 1, 1, tzinfo=timezone.utc)
     # At baseline threshold, only the third failed login onward is detected.
     records = [SyntheticEvent(event_id=f"e{i}", occurred_at=now.replace(second=i), event_type="cowrie_login_failed", source_system="cowrie", sensor_id="sensor-a", destination_port=22, protocol="ssh", suspicious=True, attributes={"authentication_outcome": "failed"}) for i in range(3)]
-    scenario, _ = service._evaluate_scenario("repeated_failed_authentication", 1, 8, records, "baseline", "static_baseline", None, None, {"auth": 3, "ports": 5, "commands": 3, "protocols": 3, "sensors": 2}, perf_counter())
+    scenario, _ = service._evaluate_scenario("repeated_failed_authentication", 1, 8, records, "baseline", "static_baseline", None, None, {"auth": 3, "ports": 5, "commands": 3, "protocols": 3, "sensors": 2})
     assert scenario.true_positives == 1
     assert scenario.false_negatives == 2
     assert scenario.false_positives == 0
@@ -156,12 +169,32 @@ def test_false_positive_rate_uses_benign_ground_truth(tmp_path):
     service = ExperimentService(ExperimentStorage(tmp_path / "false-positive.sqlite3"))
     now = datetime(2026, 1, 1, tzinfo=timezone.utc)
     rows = [SyntheticEvent(event_id=f"b{i}", occurred_at=now.replace(second=i), event_type="zeek_connection", source_system="zeek", sensor_id="sensor-a", destination_port=port, protocol="tcp", suspicious=False, attributes={}) for i, port in enumerate((21, 22, 23, 80, 443))]
-    result, _ = service._evaluate_scenario("mixed_benign_suspicious_traffic", 1, 5, rows, "baseline", "static_baseline", None, None, {"auth": 3, "ports": 5, "commands": 3, "protocols": 3, "sensors": 2}, perf_counter())
+    result, _ = service._evaluate_scenario("mixed_benign_suspicious_traffic", 1, 5, rows, "baseline", "static_baseline", None, None, {"auth": 3, "ports": 5, "commands": 3, "protocols": 3, "sensors": 2})
     assert result.false_positives == 1
     assert result.false_negatives == 0
     metrics = service._aggregate("baseline", [result], 1)
     assert metrics.false_positive_rate == pytest.approx(0.2)
     assert metrics.false_negative_rate is None
+
+
+def test_scenario_processing_timer_covers_only_event_processing_loop(monkeypatch):
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    rows = [SyntheticEvent(
+        event_id="timed-event", occurred_at=now, event_type="zeek_connection",
+        source_system="zeek", sensor_id="sensor-a", destination_port=22,
+        protocol="tcp", suspicious=False, attributes={},
+    )]
+    ticks = iter((10.0, 10.125))
+    monkeypatch.setattr(experiment_service, "perf_counter", lambda: next(ticks))
+
+    result, elapsed_ms = ExperimentService._evaluate_scenario(
+        "reconnaissance", 1, 17, rows, "baseline", "static_baseline", None,
+        None, {"auth": 3, "ports": 5, "commands": 3, "protocols": 3, "sensors": 2},
+    )
+
+    assert result.completed is True
+    assert result.processing_time_ms == pytest.approx(125.0)
+    assert elapsed_ms == pytest.approx(125.0)
 
 
 def test_bounds_duplicate_modes_and_unknown_scenarios_rejected():

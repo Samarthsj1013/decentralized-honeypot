@@ -25,10 +25,44 @@ def test_public_demo_exposes_one_sanitized_snapshot_and_health_only(tmp_path, mo
         assert response.headers["access-control-allow-origin"] == ORIGIN
         snapshot = response.json()
         assert snapshot["label"] == "Placement Demonstration — Synthetic Security Data"
+        assert snapshot["schema_version"] == 3
         assert snapshot["overview"]["telemetry_events"] == 15
         assert snapshot["cowrie"]["successful_logins"] == 3
         assert snapshot["profiles"][0]["anomaly_index"] == 0.438
+        assert "would abstain to unknown" in snapshot["profiles"][0]["basis"]
         assert snapshot["recommendations"][0]["evaluation"]["interactions_recorded"] == 8
+        research = snapshot["research"]
+        assert research["dataset_review"]["processed_sessions"] == 7465
+        assert research["dataset_review"]["processed_events"] == 35742
+        assert research["dataset_review"]["trusted_behavior_labels_available"] is False
+        assert "unavailable" in research["dataset_review"]["metrics_note"].casefold()
+        holdout = research["synthetic_holdout"]
+        assert holdout["category_labels_are_ground_truth_for_real_telemetry"] is False
+        assert len(holdout["candidates"]) == 4
+        assert holdout["feature_overlap"]["train_test_shared"] == 41
+        assert holdout["feature_overlap"]["shared_label_conflicts"] == 0
+        challenge = research["synthetic_challenge"]
+        assert challenge["train_rows"] == challenge["test_rows"] == 1200
+        assert challenge["unique_test_feature_rows"] == 1177
+        assert len(challenge["candidates"]) == 4
+        assert "not real-world validation" in challenge["interpretation"]
+        paired = research["paired_experiment"]
+        assert paired["seed"] == 20261127
+        assert sum(mode["runs_completed"] for mode in paired["modes"]) == 150
+        assert all(mode["runs_requested"] == mode["runs_completed"] == 50 for mode in paired["modes"])
+        assert len(paired["paired_contrasts"]) == 6
+        engagement_delta = next(
+            row for row in paired["paired_contrasts"]
+            if row["metric"] == "engagement" and row["comparison"] == "adaptive_to_closed_loop"
+        )
+        assert engagement_delta["ci_95_low"] < 0 < engagement_delta["ci_95_high"]
+        replication = research["node_replication_runs"]
+        assert [run["node_count"] for run in replication] == [3, 4, 5]
+        assert all(run["result"] == "passed" for run in replication)
+        assert all(run["duplicate_delivery_idempotent"] for run in replication)
+        assert all(run["tampered_record_rejected"] for run in replication)
+        assert replication[1]["untrusted_publisher_rejected"] is True
+        assert replication[0]["untrusted_publisher_rejected"] is None
         assert client.get("/healthz").json() == {"status": "ok", "service": "honeypot-placement-demo"}
 
         def assert_safe(value):

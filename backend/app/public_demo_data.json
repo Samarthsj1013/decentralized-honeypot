@@ -1,8 +1,8 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "label": "Placement Demonstration — Synthetic Security Data",
-  "notice": "Telemetry, alert, and incident rows are deterministic synthetic fixtures. The 15-event count and Cowrie, profile, and evaluation aggregates reproduce a previously operator-verified controlled local lab run using invented credentials and emulated Cowrie sessions. No raw logs, real attacker identifiers, or credentials are included; this is not live monitoring.",
-  "updated_at": "2026-11-26T12:00:00Z",
+  "notice": "Telemetry, alert, and incident rows are synthetic fixtures. The 15-event Cowrie count and profile/evaluation aggregates reproduce a previously operator-verified local lab with invented credentials and emulated sessions. Historical authentication_probing output is retained; current evidence gating abstains to unknown because no failed logins were observed. This is not live monitoring.",
+  "updated_at": "2026-11-27T14:20:19Z",
   "overview": {
     "telemetry_events": 15,
     "cowrie_successful_logins": 3,
@@ -15,14 +15,50 @@
     "recommendations": 2
   },
   "telemetry": [
-    {"timestamp": "2026-11-26T11:59:00Z", "source_system": "cowrie", "event_type": "cowrie_login_success", "severity": "low", "summary": "Synthetic SSH login event; credentials omitted."},
-    {"timestamp": "2026-11-26T11:59:12Z", "source_system": "cowrie", "event_type": "cowrie_session_connected", "severity": "low", "summary": "Synthetic SSH session metadata; no command content stored."},
-    {"timestamp": "2026-11-26T11:59:31Z", "source_system": "zeek", "event_type": "connection_observed", "severity": "low", "summary": "Synthetic connection metadata used for correlation demonstration."},
-    {"timestamp": "2026-11-26T11:59:48Z", "source_system": "suricata", "event_type": "eve_alert", "severity": "medium", "summary": "Synthetic rule alert for dashboard demonstration; not a real detection."}
+    {
+      "timestamp": "2026-11-26T11:59:00Z",
+      "source_system": "cowrie",
+      "event_type": "cowrie_login_success",
+      "severity": "low",
+      "summary": "Synthetic SSH login event; credentials omitted."
+    },
+    {
+      "timestamp": "2026-11-26T11:59:12Z",
+      "source_system": "cowrie",
+      "event_type": "cowrie_session_connected",
+      "severity": "low",
+      "summary": "Synthetic SSH session metadata; no command content stored."
+    },
+    {
+      "timestamp": "2026-11-26T11:59:31Z",
+      "source_system": "zeek",
+      "event_type": "connection_observed",
+      "severity": "low",
+      "summary": "Synthetic connection metadata used for correlation demonstration."
+    },
+    {
+      "timestamp": "2026-11-26T11:59:48Z",
+      "source_system": "suricata",
+      "event_type": "eve_alert",
+      "severity": "medium",
+      "summary": "Synthetic rule alert for dashboard demonstration; not a real detection."
+    }
   ],
   "alerts": [
-    {"timestamp": "2026-11-26T11:59:48Z", "source_system": "suricata", "severity": "medium", "rule": "demo_synthetic_rule", "summary": "Synthetic alert example. No live sensor detection is being reported."},
-    {"timestamp": "2026-11-26T11:59:55Z", "source_system": "correlation", "severity": "low", "rule": "demo_cross_source_activity", "summary": "Synthetic cross-source alert example for UI display."}
+    {
+      "timestamp": "2026-11-26T11:59:48Z",
+      "source_system": "suricata",
+      "severity": "medium",
+      "rule": "demo_synthetic_rule",
+      "summary": "Synthetic alert example. No live sensor detection is being reported."
+    },
+    {
+      "timestamp": "2026-11-26T11:59:55Z",
+      "source_system": "correlation",
+      "severity": "low",
+      "rule": "demo_cross_source_activity",
+      "summary": "Synthetic cross-source alert example for UI display."
+    }
   ],
   "cowrie": {
     "successful_logins": 3,
@@ -30,24 +66,245 @@
     "failed_logins": 0,
     "command_attempts": 0,
     "events": [
-      {"timestamp": "2026-11-26T11:59:00Z", "event_type": "cowrie_login_success", "summary": "Emulated SSH login succeeded; this does not indicate host access."},
-      {"timestamp": "2026-11-26T11:59:12Z", "event_type": "cowrie_session_connected", "summary": "Synthetic SSH session connected."},
-      {"timestamp": "2026-11-26T11:59:31Z", "event_type": "cowrie_session_closed", "summary": "Synthetic SSH session closed."}
+      {
+        "timestamp": "2026-11-26T11:59:00Z",
+        "event_type": "cowrie_login_success",
+        "summary": "Emulated SSH login succeeded; this does not indicate host access."
+      },
+      {
+        "timestamp": "2026-11-26T11:59:12Z",
+        "event_type": "cowrie_session_connected",
+        "summary": "Synthetic SSH session connected."
+      },
+      {
+        "timestamp": "2026-11-26T11:59:31Z",
+        "event_type": "cowrie_session_closed",
+        "summary": "Synthetic SSH session closed."
+      }
     ]
   },
   "incidents": [
-    {"severity": "medium", "status": "open", "confidence": 0.6, "observed_at": "2026-11-26T11:59:55Z", "rules": ["demo_cross_source_activity"], "sensors": ["cowrie", "zeek"], "evidence": ["Synthetic Cowrie session metadata was paired with synthetic connection metadata.", "This rule-based example is a triage signal, not proof of compromise."]}
+    {
+      "severity": "medium",
+      "status": "open",
+      "confidence": 0.6,
+      "observed_at": "2026-11-26T11:59:55Z",
+      "rules": [
+        "demo_cross_source_activity"
+      ],
+      "sensors": [
+        "cowrie",
+        "zeek"
+      ],
+      "evidence": [
+        "Synthetic Cowrie session metadata was paired with synthetic connection metadata.",
+        "This rule-based example is a triage signal, not proof of compromise."
+      ]
+    }
   ],
   "profiles": [
-    {"classification": "authentication_probing", "observations": 15, "anomaly_index": 0.438, "cluster": 4, "model_version": "attacker-profile-synthetic-v1", "provenance": "Operator-verified controlled local Cowrie lab using invented credentials.", "basis": "Synthetic-data-trained model; category is not confirmed intent."}
+    {
+      "classification": "authentication_probing",
+      "observations": 15,
+      "anomaly_index": 0.438,
+      "cluster": 4,
+      "model_version": "attacker-profile-synthetic-v1",
+      "provenance": "Operator-verified controlled local Cowrie lab using invented credentials.",
+      "basis": "Historical classifier output is retained for audit; current evidence gating would abstain to unknown because this aggregate has zero failed logins."
+    }
   ],
   "recommendations": [
-    {"status": "approved", "category": "authentication_probing", "strategy": "credential_decoy", "title": "Add synthetic authentication targets", "summary": "Approval is a workflow state only; it does not deploy or enforce a policy.", "evaluation": {"outcome": "passed", "kind": "isolated_synthetic_workflow_validation", "interactions_recorded": 8, "interactions_attempted": 8, "generated_decoys": 10, "elapsed_ms": 678.5, "observed_at": "2026-11-26", "provenance": "Previously operator-verified local synthetic evaluation."}},
-    {"status": "pending", "category": "reconnaissance", "strategy": "expanded_decoy_path", "title": "Increase simulated service diversity", "summary": "Synthetic pending-review example. No evaluation or approval action is available in the public demo.", "evaluation": null}
+    {
+      "status": "approved",
+      "category": "authentication_probing",
+      "strategy": "credential_decoy",
+      "title": "Add synthetic authentication targets",
+      "summary": "Approval is a workflow state only; it does not deploy or enforce a policy.",
+      "evaluation": {
+        "outcome": "passed",
+        "kind": "isolated_synthetic_workflow_validation",
+        "interactions_recorded": 8,
+        "interactions_attempted": 8,
+        "generated_decoys": 10,
+        "elapsed_ms": 678.5,
+        "observed_at": "2026-11-26",
+        "provenance": "Previously operator-verified local synthetic evaluation."
+      }
+    },
+    {
+      "status": "pending",
+      "category": "reconnaissance",
+      "strategy": "expanded_decoy_path",
+      "title": "Increase simulated service diversity",
+      "summary": "Synthetic pending-review example. No evaluation or approval action is available in the public demo.",
+      "evaluation": null
+    }
   ],
   "intelligence": {
     "exchange_available_in_prototype": true,
     "public_demo_peer_state": "not_connected",
     "note": "Signed intelligence exchange is implemented as a local prototype. This public demo has no connected peers and does not claim consensus or live replication."
+  },
+  "research": {
+    "dataset_review": {
+      "name": "CyberLab Cowrie dataset, one daily export",
+      "record_url": "https://zenodo.org/records/3687527",
+      "license": "CC-BY-4.0",
+      "sample_file": "cyberlab_2019-05-18.json.gz",
+      "file_sha256": "b681316de5ff58f8cae385fd4a2232d93ccdeb0b117ef58668195df5797d9c45",
+      "processed_sessions": 7465,
+      "processed_events": 35742,
+      "trusted_behavior_labels_available": false,
+      "metrics_note": "Accuracy, precision, recall, and F1 are unavailable because this sample has no trusted behavioral labels. Model category counts are unlabeled outputs, not attack labels."
+    },
+    "synthetic_holdout": {
+      "label_source": "synthetic scenario generator",
+      "category_labels_are_ground_truth_for_real_telemetry": false,
+      "samples_per_category_per_split": 200,
+      "train_seed": 20261127,
+      "validation_seed": 20261128,
+      "test_seed": 20261129,
+      "train_rows": 1200,
+      "validation_rows": 1200,
+      "test_rows": 1200,
+      "refit_rows": 2400,
+      "candidates": [
+        {
+          "model": "random_forest",
+          "accuracy": 1.0,
+          "macro_f1": 1.0,
+          "macro_false_positive_rate_ovr": 0.0,
+          "macro_false_negative_rate_ovr": 0.0
+        },
+        {
+          "model": "decision_tree",
+          "accuracy": 1.0,
+          "macro_f1": 1.0,
+          "macro_false_positive_rate_ovr": 0.0,
+          "macro_false_negative_rate_ovr": 0.0
+        },
+        {
+          "model": "logistic_regression",
+          "accuracy": 1.0,
+          "macro_f1": 1.0,
+          "macro_false_positive_rate_ovr": 0.0,
+          "macro_false_negative_rate_ovr": 0.0
+        },
+        {
+          "model": "evidence_rules",
+          "accuracy": 1.0,
+          "macro_f1": 1.0,
+          "macro_false_positive_rate_ovr": 0.0,
+          "macro_false_negative_rate_ovr": 0.0
+        }
+      ],
+      "feature_overlap": {
+        "train_unique_vectors": 1042,
+        "validation_unique_vectors": 1041,
+        "test_unique_vectors": 1041,
+        "train_validation_shared": 41,
+        "train_test_shared": 41,
+        "validation_test_shared": 40,
+        "shared_label_conflicts": 0
+      },
+      "interpretation": "All candidates scored perfectly on this independent split, but 40-41 exact feature vectors recur across seeded splits with the same label, and the classes share the synthetic generator's defining thresholds. These are optimism sources; this does not establish real-world model utility."
+    },
+    "synthetic_challenge": {
+      "label_source": "latent synthetic dominant scenario",
+      "samples_per_category": 200,
+      "train_seed": 20301127,
+      "test_seed": 20301128,
+      "train_rows": 1200,
+      "test_rows": 1200,
+      "unique_test_feature_rows": 1177,
+      "candidates": [
+        {"model": "random_forest", "accuracy": 0.86, "macro_f1": 0.8601315261797747, "macro_false_positive_rate_ovr": 0.028, "macro_false_negative_rate_ovr": 0.14},
+        {"model": "decision_tree", "accuracy": 0.7525, "macro_f1": 0.7573238428558656, "macro_false_positive_rate_ovr": 0.0495, "macro_false_negative_rate_ovr": 0.2475},
+        {"model": "logistic_regression", "accuracy": 0.5358333333333334, "macro_f1": 0.5175964996328019, "macro_false_positive_rate_ovr": 0.09283333333333334, "macro_false_negative_rate_ovr": 0.4641666666666666},
+        {"model": "evidence_rules", "accuracy": 0.4825, "macro_f1": 0.5164605091089477, "macro_false_positive_rate_ovr": 0.1035, "macro_false_negative_rate_ovr": 0.5175}
+      ],
+      "interpretation": "This separate authored synthetic challenge overlaps categories, mixes latent episodes, adds feature noise and missing aggregates. Random forest exceeds fixed evidence rules by 34.4 macro-F1 points on these synthetic labels only; this is not real-world validation."
+    },
+    "paired_experiment": {
+      "seed": 20261127,
+      "scenario_count": 10,
+      "repetitions": 5,
+      "modes": [
+        {
+          "mode": "baseline",
+          "runs_requested": 50,
+          "runs_completed": 50,
+          "events_generated": 245,
+          "true_positives": 75,
+          "false_positives": 0,
+          "false_negatives": 150,
+          "detection_coverage": 0.3333333333333333,
+          "false_positive_rate": 0.0,
+          "false_negative_rate": 0.6666666666666666,
+          "incident_detection_rate": 1.0,
+          "median_detection_latency_seconds": 2.5,
+          "adaptation_frequency": 0.0,
+          "average_event_processing_ms": 26.112745304078775,
+          "simulated_engagement_rate": 0.28,
+          "mean_synthetic_interaction_depth": 5.18,
+          "median_virtual_session_duration_seconds": 5.0,
+          "mean_strategy_reward": null
+        },
+        {
+          "mode": "adaptive",
+          "runs_requested": 50,
+          "runs_completed": 50,
+          "events_generated": 245,
+          "true_positives": 90,
+          "false_positives": 0,
+          "false_negatives": 135,
+          "detection_coverage": 0.4,
+          "false_positive_rate": 0.0,
+          "false_negative_rate": 0.6,
+          "incident_detection_rate": 1.0,
+          "median_detection_latency_seconds": 2.0,
+          "adaptation_frequency": 0.2,
+          "average_event_processing_ms": 26.354428570318436,
+          "simulated_engagement_rate": 0.3,
+          "mean_synthetic_interaction_depth": 5.24,
+          "median_virtual_session_duration_seconds": 5.0,
+          "mean_strategy_reward": null
+        },
+        {
+          "mode": "closed_loop",
+          "runs_requested": 50,
+          "runs_completed": 50,
+          "events_generated": 255,
+          "true_positives": 95,
+          "false_positives": 0,
+          "false_negatives": 140,
+          "detection_coverage": 0.40425531914893614,
+          "false_positive_rate": 0.0,
+          "false_negative_rate": 0.5957446808510638,
+          "incident_detection_rate": 1.0,
+          "median_detection_latency_seconds": 2.0,
+          "adaptation_frequency": 0.12,
+          "average_event_processing_ms": 23.864538431185863,
+          "simulated_engagement_rate": 0.2,
+          "mean_synthetic_interaction_depth": 5.1,
+          "median_virtual_session_duration_seconds": 5.0,
+          "mean_strategy_reward": 0.38757263999999997
+        }
+      ],
+      "paired_contrasts": [
+        {"metric": "engagement", "comparison": "baseline_to_adaptive", "paired_runs": 50, "mean_delta": 0.02, "ci_95_low": -0.16, "ci_95_high": 0.24},
+        {"metric": "engagement", "comparison": "adaptive_to_closed_loop", "paired_runs": 50, "mean_delta": -0.1, "ci_95_low": -0.28, "ci_95_high": 0.04},
+        {"metric": "engagement", "comparison": "baseline_to_closed_loop", "paired_runs": 50, "mean_delta": -0.08, "ci_95_low": -0.16, "ci_95_high": 0.0},
+        {"metric": "detection_coverage", "comparison": "baseline_to_adaptive", "paired_runs": 50, "mean_delta": 0.04583333333333333, "ci_95_low": 0.0, "ci_95_high": 0.1125},
+        {"metric": "detection_coverage", "comparison": "adaptive_to_closed_loop", "paired_runs": 50, "mean_delta": 0.010285714285714287, "ci_95_low": 0.0, "ci_95_high": 0.0246},
+        {"metric": "detection_coverage", "comparison": "baseline_to_closed_loop", "paired_runs": 50, "mean_delta": 0.05611904761904762, "ci_95_low": 0.005, "ci_95_high": 0.1255}
+      ],
+      "interpretation": "These paired seeded synthetic runs use scenario-cluster bootstrap intervals (10 scenario clusters). The adaptive-to-closed-loop change is -10.0 pp for engagement (closed-loop minus adaptive); its 95% interval is -28.0 to +4.0 pp and includes zero. This run does not establish a systematic decrease. Labels, reactions, and dwell time are generator assumptions, not real attacker behavior."
+    },
+    "node_replication_runs": [
+      {"node_count": 3, "result": "passed", "trusted_imports_pending": 2, "duplicate_delivery_idempotent": true, "tampered_record_rejected": true, "downtime_detected": true, "restart_recovery_passed": true, "untrusted_publisher_rejected": null, "transfer_latency_samples_ms": [1051.434, 938.740]},
+      {"node_count": 4, "result": "passed", "trusted_imports_pending": 2, "duplicate_delivery_idempotent": true, "tampered_record_rejected": true, "downtime_detected": true, "restart_recovery_passed": true, "untrusted_publisher_rejected": true, "transfer_latency_samples_ms": [1030.480, 850.961]},
+      {"node_count": 5, "result": "passed", "trusted_imports_pending": 2, "duplicate_delivery_idempotent": true, "tampered_record_rejected": true, "downtime_detected": true, "restart_recovery_passed": true, "untrusted_publisher_rejected": true, "transfer_latency_samples_ms": [1122.538, 840.134]}
+    ]
   }
 }

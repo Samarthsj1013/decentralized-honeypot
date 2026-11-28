@@ -3,8 +3,11 @@
 Backend application imports can initialize local ledger SQLite storage and a
 checkpoint signing key. Do not run the full suite from the working checkout
 when it may contain local data. Make a fresh source copy and exclude all
-database files, key files, backups, virtual environments, caches, and build
-output. The older ML endpoint test also needs the trusted local
+database files, key files, backups, environment files, virtual environments,
+caches, runtime logs, and build output. Copy the repository's deliberate test
+fixtures intact: `cowrie_events.jsonl`, `suricata_eve.jsonl`, and
+`zeek_conn.log`. Do not apply a blanket `*.log` exclusion: the Zeek TSV file
+is a required parser fixture. The older ML endpoint test also needs the trusted local
 `experiments/results/behavior_model.joblib` artifact; copy that artifact only
 if it exists. It is not a database or private key.
 
@@ -25,8 +28,11 @@ foreach ($sourceRoot in @("backend/app", "backend/tests")) {
   $sourcePath = Join-Path $repoRoot $sourceRoot
   Get-ChildItem -LiteralPath $sourcePath -Recurse -File |
     Where-Object {
-      $_.Name -notmatch '(\.bak\d*$|backup|~$)' -and
-      $_.Extension -notin @(".sqlite", ".sqlite3", ".db", ".pem", ".key", ".joblib", ".pyc")
+      $relative = $_.FullName.Substring($sourcePath.TrimEnd('\').Length).TrimStart('\')
+      $isFixture = $sourceRoot -eq "backend/tests" -and $relative.StartsWith("fixtures\", [StringComparison]::OrdinalIgnoreCase)
+      $_.Name -notmatch '(?i)(\.bak\d*$|backup|~$|^\.env(?:\.|$))' -and
+      $_.Extension -notin @(".sqlite", ".sqlite3", ".db", ".pem", ".key", ".joblib", ".pyc", ".pyo") -and
+      ($_.Extension -ne ".log" -or $isFixture)
     } |
     ForEach-Object {
       $relative = $_.FullName.Substring($sourcePath.TrimEnd('\').Length).TrimStart('\')
@@ -39,6 +45,18 @@ Copy-Item (Join-Path $repoRoot "backend/requirements.txt") (Join-Path $tempRoot 
 if (Test-Path (Join-Path $repoRoot "experiments/results/behavior_model.joblib")) {
   New-Item -ItemType Directory -Path (Join-Path $tempRoot "experiments/results") -Force | Out-Null
   Copy-Item (Join-Path $repoRoot "experiments/results/behavior_model.joblib") (Join-Path $tempRoot "experiments/results/behavior_model.joblib")
+}
+$requiredFixtures = @("cowrie_events.jsonl", "suricata_eve.jsonl", "zeek_conn.log")
+foreach ($fixture in $requiredFixtures) {
+  $sourceFixture = Join-Path $repoRoot (Join-Path "backend/tests/fixtures" $fixture)
+  $copiedFixture = Join-Path $tempRoot (Join-Path "backend/tests/fixtures" $fixture)
+  if (!(Test-Path -LiteralPath $sourceFixture -PathType Leaf) -or !(Test-Path -LiteralPath $copiedFixture -PathType Leaf)) {
+    throw "Required backend test fixture missing: $fixture"
+  }
+  if ((Get-Item -LiteralPath $sourceFixture).Length -ne (Get-Item -LiteralPath $copiedFixture).Length) {
+    throw "Required backend test fixture was not copied intact: $fixture"
+  }
+  Write-Host "Verified fixture: $fixture"
 }
 $env:PYTHONPATH = "$(Join-Path $tempRoot 'backend');$tempRoot"
 $env:TEMP = $appTemp

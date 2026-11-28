@@ -1,6 +1,6 @@
 ﻿# Decentralized AI Self-Evolving Honeypot Network
 
-An experimental cybersecurity research prototype for adaptive honeypots,
+DAHIN is an experimental cybersecurity research prototype for adaptive honeypots,
 behavioral threat analysis, and decentralized threat intelligence.
 
 ## Project Status
@@ -1032,18 +1032,23 @@ duplicates**. Administrator login, logout, and re-login succeeded. Telemetry
 and Cowrie activity rendered with 3 successful emulated logins, 6 session
 events, 0 failed logins, and 0 command attempts.
 
-Profile recomputation produced one 15-observation profile classified as
-Authentication Probing (mean anomaly index 0.438, cluster 4) using
-`attacker-profile-synthetic-v1`. One deception recommendation passed local
+Profile recomputation historically produced one 15-observation profile
+classified as Authentication Probing (mean anomaly index 0.438, cluster 4)
+using `attacker-profile-synthetic-v1`. A later review found no failed logins
+in that successful-only aggregate; the historical label remains in the
+snapshot for audit, while the current deterministic evidence gate abstains to
+`unknown`. One deception recommendation passed local
 synthetic evaluation (8/8 interactions, 10 synthetic decoys, 678.5 ms) and was
 approved. Approval is recorded workflow state only; it does not deploy decoys
 or enforce a policy. The model is trained on synthetic data, and these results
 do not establish real-world detection or defense effectiveness.
 
 The populated alerts and incidents panels were not visually verified, and the
-optional node dashboard was unconfigured. The sidebar text “Simulation mode /
-Synthetic activity only” is misleading when real sensor telemetry is also
-shown; the wording remains unchanged. The complete startup, restricted
+optional node dashboard was unconfigured. The misleading sidebar wording was
+changed to “Offline experiments / Synthetic scenarios; sensor feed separate”
+so the operational dashboard distinguishes generated scenarios from sensor
+telemetry. The wording change is covered by frontend source/render checks but
+has not had a separate manual browser review. The complete startup, restricted
 temporary-token-file handling, and cleanup steps are in
 [`docs/FINAL_DEMO_GUIDE.md`](docs/FINAL_DEMO_GUIDE.md).
 
@@ -1114,3 +1119,63 @@ warning**; frontend tests, **8 passed**; production build succeeded with
 output directed to `%TEMP%`. The warning is Starlette's deprecation notice
 about `httpx` use with `TestClient`. These checks validate local code paths,
 not sensor deployment or real-world defense effectiveness.
+
+## DAHIN research evidence update (2026-11-27)
+
+The research workflow includes a privacy-filtered review of one public
+CyberLab Cowrie daily export (7,465 sessions, 35,742 events; CC-BY-4.0) and a
+leakage-aware comparison of four profile-model candidates on independently
+seeded synthetic splits. The public dataset has no trusted behavior labels,
+so real-data accuracy, precision, recall, and F1 are unavailable. Every
+candidate scored 100% accuracy and macro-F1 on the generated synthetic holdout;
+the fixed evidence-rule baseline mirrors the generator's class thresholds, so
+these scores do not establish operational performance.
+An exact-vector audit found 40–41 same-label feature collisions across the
+seeded splits, another limitation; the central issue is the generator's
+deterministic class-defining feature ranges and label-feature circularity.
+
+A separate alternate-generator challenge now tests overlapping latent
+behaviors, mixed features, missing aggregates, and noisy counts without tuning
+on the challenge split. In that authored synthetic challenge, random forest
+measured 0.860 macro-F1 versus 0.516 for fixed evidence rules; this is not
+real-world validation. The public read-only snapshot displays both results.
+
+A paired 10-scenario × 5-repetition experiment completed 50/50 runs each in
+static baseline, adaptive, and closed-loop modes. Synthetic detection coverage
+was 33.3%, 40.0%, and 40.4%; seeded engagement estimates were 28%, 30%, and
+20%. A paired ten-scenario cluster bootstrap estimated adaptive-minus-closed-
+loop engagement at -10.0 percentage points with a 95% interval from -28.0 to
+4.0, so the observed difference is inconclusive. The public read-only snapshot
+includes these sanitized results with their provenance and limitations. The
+browser sandbox still runs locally in the
+browser and does not send its simulations to the operational API. Exact
+methods, checksums, metrics, and reproduction commands are in
+[`docs/EXPERIMENTAL_RESULTS.md`](docs/EXPERIMENTAL_RESULTS.md) and
+[`docs/EXPERIMENTAL_EVALUATION.md`](docs/EXPERIMENTAL_EVALUATION.md).
+
+The local replication demonstration has repeatable tests for three, four,
+and five simulated node processes. Nodes use separate temporary SQLite stores
+and test-only Ed25519 keys over direct localhost HTTP; tests cover pending
+imports, duplicates, tampering, unknown keys, downtime, and recovery. This is
+not a multi-machine deployment or consensus protocol. See
+[`docs/DEMO_GUIDE.md`](docs/DEMO_GUIDE.md) for commands.
+
+## Final DAHIN verification (2026-11-29)
+
+The latest isolated source-copy regression run reported **404 backend tests
+passed, 0 failed, 0 skipped**, with one Starlette/httpx deprecation warning.
+The frontend suite reported **28 passed, 0 failed, 0 skipped**; the public
+configuration Vite build succeeded (35 modules). An automated Chrome/Playwright
+run exercised the rendered research dashboard and browser-local sandbox at
+desktop, tablet, and mobile viewport widths. It observed no console/page
+errors, failed or external requests, or operational API calls from sandbox
+actions. The public browser requested only the sanitized snapshot endpoint.
+
+This does not replace real sensor or field validation: no new live
+Cowrie/Zeek/Suricata collection was performed in this final cycle. The authored
+synthetic challenge measured random-forest macro-F1 0.860 versus 0.516 for
+fixed rules; these are synthetic labels, not real-world validation. See
+[`docs/UPGRADE_PROGRESS.md`](docs/UPGRADE_PROGRESS.md),
+[`docs/FINAL_PLACEMENT_STATUS.md`](docs/FINAL_PLACEMENT_STATUS.md), and
+[`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md) for evidence,
+deployment gates, and remaining limits.

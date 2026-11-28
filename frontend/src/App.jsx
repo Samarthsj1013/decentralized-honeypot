@@ -678,9 +678,9 @@ function AuthenticatedApp({ onLogout, role }) {
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""}`} aria-label="Main navigation">
-        <a className="brand" href="#overview" aria-label="Decentralized AI Honeypot dashboard home">
+        <a className="brand" href="#overview" aria-label="DAHIN dashboard home">
           <span className="brand-mark"><Icon name="shield" size={23} /></span>
-          <span className="brand-copy"><strong>Decentralized AI</strong><small>HONEYPOT NETWORK</small></span>
+          <span className="brand-copy"><strong>DAHIN</strong><small>HONEYPOT NETWORK</small></span>
         </a>
         <div className="nav-label">WORKSPACE</div>
         <nav className="nav-links">
@@ -692,7 +692,7 @@ function AuthenticatedApp({ onLogout, role }) {
           <a className="nav-link" href="#runs" onClick={() => setMobileNavOpen(false)}><Icon name="runs" /><span>Run details</span></a>
         </nav>
         <div className="sidebar-bottom">
-          <div className="sidebar-status"><span className="mini-shield"><Icon name="shield" size={18} /></span><div><strong>Simulation mode</strong><small>Synthetic activity only</small></div></div>
+          <div className="sidebar-status"><span className="mini-shield"><Icon name="shield" size={18} /></span><div><strong>Offline experiments</strong><small>Synthetic scenarios; sensor feed separate</small></div></div>
           <a className="docs-link" href={docsUrl} target="_blank" rel="noreferrer">API documentation <Icon name="arrow" size={14} /></a>
         </div>
       </aside>
@@ -782,7 +782,7 @@ function AuthenticatedApp({ onLogout, role }) {
               <ScenarioChart title="Event recording" subtitle="Recorded interactions / attempted" rows={[]} metric="eventRecordingRate" unit="%" color="#61c995" maxValue={1} />
             </div></div>
           </>}
-          <footer className="page-footer"><span>Decentralized AI Honeypot</span><span>Evaluation data is loaded from the configured API.</span><span>{evaluation ? `Updated ${new Date(evaluation.ended_at).toLocaleTimeString()}` : "No evaluation loaded"}</span></footer>
+          <footer className="page-footer"><span>DAHIN · Decentralized Adaptive Honeypot Intelligence Network</span><span>Evaluation data is loaded from the configured API.</span><span>{evaluation ? `Updated ${new Date(evaluation.ended_at).toLocaleTimeString()}` : "No evaluation loaded"}</span></footer>
         </div>
       </main>
     </div>
@@ -818,13 +818,14 @@ export function PublicDemoDashboard({ initialSnapshot = null } = {}) {
 
   return <div className="app-shell public-demo-app">
     <aside className="sidebar" aria-label="Public demo navigation">
-      <a className="brand" href="#overview" aria-label="Placement demonstration home"><span className="brand-mark"><Icon name="shield" size={23} /></span><span className="brand-copy"><strong>Decentralized AI</strong><small>HONEYPOT NETWORK</small></span></a>
+      <a className="brand" href="#overview" aria-label="DAHIN placement demonstration home"><span className="brand-mark"><Icon name="shield" size={23} /></span><span className="brand-copy"><strong>DAHIN</strong><small>HONEYPOT NETWORK</small></span></a>
       <div className="nav-label">PUBLIC DEMONSTRATION</div>
       <nav className="nav-links">{[
         ["overview", "Overview", "chart"], ["sandbox", "Simulation Lab", "pulse"],
         ["sandbox-telemetry", "Telemetry", "pulse"], ["sandbox-detection", "Alerts & Incidents", "shield"],
         ["sandbox-profiles", "Behavior Analysis", "chart"], ["sandbox-deception", "Adaptive Deception", "layers"],
         ["sandbox-comparison", "Strategy Comparison", "runs"], ["sandbox-intelligence", "Intelligence Exchange", "runs"],
+        ["research-evidence", "Research Evidence", "chart"],
         ["verified-baseline", "Verified Lab Baseline", "chart"],
       ].map(([id, label, icon]) => <a className={`nav-link${activeNav === id ? " active" : ""}`} aria-current={activeNav === id ? "location" : undefined} key={id} href={`#${id}`} onClick={() => setActiveNav(id)}><Icon name={icon} /><span>{label}</span></a>)}</nav>
       <div className="sidebar-bottom"><div className="sidebar-status"><span className="mini-shield"><Icon name="shield" size={18} /></span><div><strong>Interactive sandbox</strong><small>Synthetic browser data</small></div></div></div>
@@ -832,13 +833,33 @@ export function PublicDemoDashboard({ initialSnapshot = null } = {}) {
     <main className="main-content" id="overview">
       <header className="topbar"><div className="crumb"><span>Placement Edition</span><b>/</b><strong>Public demo</strong></div><div className="top-actions"><span className="connection-pill connection-connected"><span className="status-dot" />{loading ? "Loading" : error ? "Unavailable" : "Demo data"}</span></div></header>
       <div className="page-wrap">
-        <section className="page-title-row"><div><div className="eyebrow">INTERACTIVE SECURITY SANDBOX — SYNTHETIC DATA</div><h1>Explore the honeypot network</h1><p>Run bounded scenarios and inspect their generated events, rule signals, profiles, and strategy outcomes.</p></div><a className="primary-button" href="#sandbox">Start Simulation Lab <span aria-hidden="true">→</span></a></section>
+        <section className="page-title-row"><div><div className="eyebrow">DAHIN · INTERACTIVE SECURITY SANDBOX — SYNTHETIC DATA</div><h1>Explore the honeypot network</h1><p>Run bounded scenarios and inspect their generated events, rule signals, profiles, and strategy outcomes.</p></div><a className="primary-button" href="#sandbox">Start Simulation Lab <span aria-hidden="true">→</span></a></section>
         <InteractiveSandbox />
         {snapshot && <div className="alert alert-success" role="note"><strong>{snapshot.label}</strong><span>{snapshot.notice}</span></div>}
         {error && <div className="alert alert-error" role="alert"><strong>Demo service unavailable</strong><span>The backend may be starting after an idle period. {error}</span><button className="secondary-button" onClick={load} disabled={loading}>Retry</button></div>}
         {loading && !snapshot && <section className="panel public-demo-empty"><p role="status">Loading the demonstration snapshot. A free backend may need time to wake.</p></section>}
         {snapshot && <>
           <section className="verified-baseline" id="verified-baseline" aria-labelledby="verified-baseline-title"><div className="baseline-title"><div><span className="eyebrow">PREVIOUSLY VERIFIED CONTROLLED LOCAL LAB BASELINE</span><h2 id="verified-baseline-title">Cowrie placement walkthrough results</h2><p>This is a published historical snapshot, separate from the current browser sandbox run.</p></div></div><div className="kpi-grid" aria-label="Verified local baseline metrics">{publicDemoMetrics(snapshot).map((item) => <KpiCard key={item.label} label={item.label} value={item.value} detail={item.detail} icon="pulse" />)}</div></section>
+
+          <section className="panel experiment-panel research-evidence-panel" id="research-evidence" aria-labelledby="research-evidence-title">
+            <div className="section-heading"><div><span className="eyebrow">SANITIZED, REPRODUCIBLE SUMMARIES</span><h2 id="research-evidence-title">Research evidence and limits</h2><p>Published aggregates are separate from the historical Cowrie lab snapshot and browser-local sandbox.</p></div></div>
+            <div className="experiment-mode-grid research-source-grid">
+              <article><h3>Public Cowrie dataset sample</h3><p><a href={snapshot.research.dataset_review.record_url} target="_blank" rel="noreferrer">{snapshot.research.dataset_review.name}</a> · {snapshot.research.dataset_review.license}</p><span><b>{snapshot.research.dataset_review.processed_sessions.toLocaleString()}</b> processed sessions</span><span><b>{snapshot.research.dataset_review.processed_events.toLocaleString()}</b> processed events</span><p>{snapshot.research.dataset_review.metrics_note}</p><small>SHA-256: <code>{snapshot.research.dataset_review.file_sha256}</code></small></article>
+              <article><h3>Synthetic model holdout</h3><p>{snapshot.research.synthetic_holdout.train_rows.toLocaleString()} train, {snapshot.research.synthetic_holdout.validation_rows.toLocaleString()} validation, and {snapshot.research.synthetic_holdout.test_rows.toLocaleString()} test rows; distinct fixed seeds.</p><div className="research-model-list">{snapshot.research.synthetic_holdout.candidates.map((candidate) => <span key={candidate.model}><b>{candidate.model.replaceAll("_", " ")}</b><small>Accuracy {Math.round(candidate.accuracy * 100)}% · macro F1 {Math.round(candidate.macro_f1 * 100)}% · macro FPR/FNR {Math.round(candidate.macro_false_positive_rate_ovr * 100)}%/{Math.round(candidate.macro_false_negative_rate_ovr * 100)}%</small></span>)}</div><p>{snapshot.research.synthetic_holdout.interpretation}</p><small>Exact vectors shared across train/validation, train/test, validation/test: {snapshot.research.synthetic_holdout.feature_overlap.train_validation_shared}/{snapshot.research.synthetic_holdout.feature_overlap.train_test_shared}/{snapshot.research.synthetic_holdout.feature_overlap.validation_test_shared}; label conflicts {snapshot.research.synthetic_holdout.feature_overlap.shared_label_conflicts}.</small></article>
+              <article><h3>Independent synthetic shift challenge</h3><p>{snapshot.research.synthetic_challenge.train_rows.toLocaleString()} training rows and {snapshot.research.synthetic_challenge.test_rows.toLocaleString()} challenge rows; {snapshot.research.synthetic_challenge.unique_test_feature_rows.toLocaleString()} distinct test feature rows. Challenge labels come from a latent dominant scenario.</p><div className="research-model-list">{snapshot.research.synthetic_challenge.candidates.map((candidate) => <span key={candidate.model}><b>{candidate.model.replaceAll("_", " ")}</b><small>Accuracy {Math.round(candidate.accuracy * 100)}% · macro F1 {(candidate.macro_f1 * 100).toFixed(1)}% · macro FPR/FNR {(candidate.macro_false_positive_rate_ovr * 100).toFixed(1)}%/{(candidate.macro_false_negative_rate_ovr * 100).toFixed(1)}%</small></span>)}</div><p>{snapshot.research.synthetic_challenge.interpretation}</p></article>
+            </div>
+            <div className="experiment-results"><h3>Paired static, adaptive, and closed-loop experiment</h3><p>Seed {snapshot.research.paired_experiment.seed} · {snapshot.research.paired_experiment.scenario_count} scenarios · {snapshot.research.paired_experiment.repetitions} repetitions · all results below are generated synthetic runs.</p>
+              <div className="experiment-table-wrap"><table aria-label="Paired synthetic strategy experiment results"><thead><tr><th>Mode</th><th>Completed</th><th>Detection coverage</th><th>FPR</th><th>FNR</th><th>Simulated engagement</th><th>Avg. processing</th></tr></thead><tbody>{snapshot.research.paired_experiment.modes.map((mode) => <tr key={mode.mode}><td>{mode.mode.replaceAll("_", " ")}</td><td>{mode.runs_completed}/{mode.runs_requested}</td><td>{mode.detection_coverage == null ? "Unavailable" : `${(mode.detection_coverage * 100).toFixed(1)}%`}</td><td>{mode.false_positive_rate == null ? "Unavailable" : `${(mode.false_positive_rate * 100).toFixed(1)}%`}</td><td>{mode.false_negative_rate == null ? "Unavailable" : `${(mode.false_negative_rate * 100).toFixed(1)}%`}</td><td>{mode.simulated_engagement_rate == null ? "Unavailable" : `${(mode.simulated_engagement_rate * 100).toFixed(1)}%`}</td><td>{mode.average_event_processing_ms == null ? "Unavailable" : `${mode.average_event_processing_ms.toFixed(2)} ms`}</td></tr>)}</tbody></table></div>
+              <p className="profile-note">{snapshot.research.paired_experiment.interpretation} Engagement and session duration are simulated assumptions, not observed attacker behavior.</p>
+              <div className="experiment-table-wrap"><table aria-label="Paired synthetic experiment uncertainty"><thead><tr><th>Measure</th><th>Comparison (right minus left)</th><th>Paired delta</th><th>Scenario-cluster 95% interval</th></tr></thead><tbody>{snapshot.research.paired_experiment.paired_contrasts.map((contrast) => <tr key={`${contrast.metric}-${contrast.comparison}`}><td>{contrast.metric.replaceAll("_", " ")}</td><td>{contrast.comparison.replaceAll("_", " → ")}</td><td>{(contrast.mean_delta * 100).toFixed(1)} pp</td><td>{(contrast.ci_95_low * 100).toFixed(1)} to {(contrast.ci_95_high * 100).toFixed(1)} pp</td></tr>)}</tbody></table></div>
+              <p className="profile-note">For engagement, adaptive → closed loop is closed-loop minus adaptive: 20% − 30% = −10.0 pp (95% interval −28.0 to +4.0 pp). The interval includes zero.</p>
+            </div>
+            <div className="replication-evidence" data-testid="replication-evidence">
+              <div className="section-heading"><div><span className="eyebrow">LIVE BACKEND PROCESS TESTS · SIGNED RECORDS</span><h3>Verified localhost replication experiments</h3><p>Separate node processes, stores, and generated test keys. These are backend signed-transfer demonstrations; they are distinct from the browser-only simulated exchange below.</p></div></div>
+              <div className="experiment-table-wrap"><table aria-label="Verified three, four, and five node signed replication results"><thead><tr><th>Nodes</th><th>Run</th><th>Pending imports</th><th>Duplicate</th><th>Tamper</th><th>Downtime / recovery</th><th>Untrusted key</th><th>Transfer samples (ms)</th></tr></thead><tbody>{snapshot.research.node_replication_runs.map((item) => <tr key={item.node_count}><th scope="row">{item.node_count}</th><td>{item.result}</td><td>{item.trusted_imports_pending}</td><td>{item.duplicate_delivery_idempotent ? "idempotent" : "not verified"}</td><td>{item.tampered_record_rejected ? "rejected" : "not verified"}</td><td>{item.downtime_detected && item.restart_recovery_passed ? "detected; recovered" : "not verified"}</td><td>{item.untrusted_publisher_rejected === null ? "not measured" : item.untrusted_publisher_rejected ? "rejected" : "not rejected"}</td><td>{item.transfer_latency_samples_ms.map((latency) => latency.toFixed(3)).join(" / ")}</td></tr>)}</tbody></table></div>
+              <p className="profile-note">One local run per topology. Timings are machine-specific localhost observations, not multi-machine availability or service-level objectives. No consensus is implemented.</p>
+            </div>
+          </section>
 
           <section className="panel live-telemetry-panel" id="telemetry" aria-label="Previously verified local baseline telemetry and alerts">
             <div className="section-heading"><div><span className="eyebrow">SYNTHETIC SAMPLE</span><h2>Telemetry &amp; security alerts</h2><p>Curated, bounded examples. No live sensor ingestion is enabled here.</p></div><span className="incident-total">{snapshot.telemetry.length} event examples</span></div>
@@ -856,6 +877,7 @@ export function PublicDemoDashboard({ initialSnapshot = null } = {}) {
           </section>
 
           <section className="panel behavior-panel" aria-label="Controlled local behavior profile result"><div className="section-heading"><div><span className="eyebrow">PRECOMPUTED CONTROLLED LOCAL RESULT</span><h2>Attacker behavior profile</h2><p>This aggregate came from the verified invented-credential Cowrie lab run. The model was trained on synthetic data; the predicted category does not establish intent.</p></div></div>
+            <div className="classification-caveat"><strong>Historical output, not the corrected current decision.</strong> The archived successful-emulated-login sample was labeled Authentication Probing. The current evidence gate would abstain to <code>unknown</code> because the sample has zero failed logins.</div>
             <div className="profile-list">{snapshot.profiles.map((profile, index) => <article className="profile-card" key={`${profile.classification}-${index}`}><div className="profile-card-body"><div className="recommendation-head"><div><span className="eyebrow">{profile.observations} observations</span><h3>{profile.classification.replaceAll("_", " ")}</h3></div><span className="recommendation-state">cluster {profile.cluster}</span></div><div className="incident-counts"><span><strong>{profile.anomaly_index.toFixed(3)}</strong>anomaly index</span><span><strong>{profile.model_version}</strong>model</span></div><p className="profile-note">{profile.provenance} {profile.basis}</p></div></article>)}</div>
           </section>
 
@@ -865,7 +887,7 @@ export function PublicDemoDashboard({ initialSnapshot = null } = {}) {
 
           <section className="panel network-operations-panel" id="intelligence" aria-label="Strategy intelligence exchange"><div className="section-heading"><div><span className="eyebrow">REPLICATION PROTOTYPE</span><h2>Decentralized intelligence</h2><p>{snapshot.intelligence.note}</p></div><span className="recommendation-state">{snapshot.intelligence.public_demo_peer_state.replaceAll("_", " ")}</span></div><p className="network-dashboard-note">Signed strategy and threat-intelligence exchange is demonstrated in isolated local nodes. This public service has no active peer links or consensus network.</p></section>
         </>}
-        <footer className="page-footer"><span>Decentralized AI Honeypot Network</span><span>Public snapshot is read-only; sandbox actions stay in this browser</span><span>Snapshot refreshed {snapshot ? new Date(snapshot.updated_at).toLocaleString() : "when available"}</span></footer>
+        <footer className="page-footer"><span>DAHIN · Decentralized Adaptive Honeypot Intelligence Network</span><span>Public snapshot is read-only; sandbox actions stay in this browser</span><span>Snapshot refreshed {snapshot ? new Date(snapshot.updated_at).toLocaleString() : "when available"}</span></footer>
       </div>
     </main>
   </div>;

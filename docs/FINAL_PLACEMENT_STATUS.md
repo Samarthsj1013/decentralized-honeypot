@@ -1,10 +1,56 @@
 # Final Placement Readiness Status
 
-**Latest verification:** 2026-11-26
-**Verdict:** Demonstrable local academic prototype with successful manual
-verification of login, telemetry, Cowrie activity, profiling, and recommendation
-review. Limits remain around synthetic evaluation, optional panels, and
-deployment scope.
+**Latest code and automated browser verification:** 2026-11-29
+**Latest manual sensor/dashboard verification:** 2026-11-26
+**Verdict:** GO for the isolated recruiter-facing public demonstration and an
+exploratory academic prototype with explicit limitations; NO-GO for an
+operational production security platform. The current research dashboard was
+automatically exercised in Chrome at desktop, tablet, and mobile widths.
+
+## Final automated verification (2026-11-29)
+
+- Fresh isolated backend suite: **404 passed, 0 failed, 0 skipped, 1 warning**
+  in 193.99 seconds. The warning is Starlette's deprecation notice for using
+  `httpx` with `starlette.testclient`. Fixture copies were verified before
+  pytest; databases and keys were temporary and separate.
+- Frontend suite: **28 passed, 0 failed, 0 skipped**. Public-config production
+  build succeeded using Vite 6.4.5 (35 modules), with output under `%TEMP%`.
+  A bounded bundle scan found no configured token variable names,
+  private-key headers, or JWT-shaped strings.
+- Chrome/Playwright exercised the populated read-only snapshot and sandbox:
+  all 10 nav entries; seven scenarios; leading-zero input normalization;
+  benign control; same-seed reproducibility; telemetry filtering/sorting;
+  recommendation evaluation/approval; strategy comparison; simulated
+  intelligence duplicate/review; reset isolation; and preservation of the
+  15-event historical baseline.
+- At widths 1440, 768, and 390 pixels, page/body widths matched the viewport.
+  The run recorded zero console errors, page errors, failed requests, or
+  external requests. Only two GETs to `/api/v1/public-demo` were observed;
+  sandbox actions did not contact operational endpoints.
+- The rendered research view includes the corrected right-minus-left
+  comparison direction and interval, synthetic-data caveats, historical versus
+  corrected classification, and 3/4/5-node signed localhost measurements.
+  Temporary screenshots and machine-readable evidence are outside the repo.
+- Isolated public API `/healthz` and `/api/v1/public-demo` returned 200;
+  operational event/profile/ledger/auth/OpenAPI/ingestion routes and public
+  mutation paths returned 404. Exact local CORS was allowed; an untrusted
+  origin was rejected with 403.
+
+Current browser evidence establishes rendering and local interaction behavior,
+not human visual judgment on every device/browser or real-world security
+effectiveness. Earlier statements below that browser automation was unavailable
+refer to the 2026-11-28 checkpoint and are superseded by this section.
+
+## Latest code verification (2026-11-28)
+
+The resumed source-only regression run passed **399 tests, 0 failures, 0
+skipped, 1 Starlette/httpx deprecation warning**. The frontend passed **28
+tests**, and a public-config Vite build transformed 35 modules successfully.
+Remote peer/dashboard/collector bearer URLs now require HTTPS unless the target
+is loopback; focused regression tests cover both. These checks do not replace a
+new browser review of the research panel, live Zeek/Suricata sensors, or
+populated alert and incident panels. Detailed commands and fixture checks are in
+[`UPGRADE_PROGRESS.md`](UPGRADE_PROGRESS.md).
 
 ## Manual browser verification (2026-11-26)
 
@@ -36,14 +82,58 @@ optional network-node dashboard was unconfigured. The observed zero failed
 logins and zero command attempts are not evidence that alert or incident
 rendering was tested.
 
-The sidebar in `frontend/src/App.jsx` still reads **“Simulation mode / Synthetic
-activity only”** while the dashboard also displays genuine external sensor
-telemetry. This label is misleading for the mixed data view. It is recorded as
-a UI wording issue; no frontend change was made in this closeout.
+The operational sidebar wording was corrected on 2026-11-27 to **“Offline
+experiments / Synthetic scenarios; sensor feed separate”**, distinguishing
+generated scenarios from external telemetry. Frontend source and SSR checks
+cover the copy, but this wording change has not received a separate manual
+browser review.
+
+The public snapshot was updated to schema version 3 with sanitized research
+aggregates: a labeled-source CyberLab sample review, the original synthetic
+holdout, an alternate-generator synthetic challenge, and paired strategy
+effects with scenario-cluster intervals. The historical
+successful-only Cowrie profile output remains visible for audit, with a note
+that the current evidence gate would abstain to `unknown` because no failed
+logins were present. These new summary panels are covered by automated
+backend and React server-render tests; the previously reported manual browser
+session did not inspect them.
 
 The repeatable Windows procedure, including restricted temporary token files
 outside the repository and their cleanup, is in
 [`FINAL_DEMO_GUIDE.md`](FINAL_DEMO_GUIDE.md).
+
+## Final closeout work (2026-11-28)
+
+The original classifier's 100% synthetic holdout result was investigated.
+Distinct generator seeds do not prevent all exact feature collisions: the
+train/validation/test splits had 40–41 pairwise shared vectors, always with the
+same label. The original generator also emits near-disjoint category signals
+and the evidence-rule baseline mirrors those signals. These are likely
+optimism causes; duplicate vectors alone do not account for perfect scores.
+
+A separate 1,200-row alternate-generator synthetic challenge was added with
+latent dominant-scenario labels, mixed secondary behavior, missing aggregates,
+and count noise. Measured accuracy/macro-F1 were RF 0.8600/0.8601, decision
+tree 0.7525/0.7573, logistic regression 0.5358/0.5176, and fixed rules
+0.4825/0.5165. RF exceeds rules in this authored synthetic setting only; no
+real-world classifier value is established. The public snapshot and research
+panel now show this result.
+
+The retained paired experiment was reanalyzed with a 20,000-draw
+scenario-cluster bootstrap. Adaptive-minus-closed-loop engagement was -10.0
+percentage points (95% interval -28.0 to +4.0), so the lower 20% closed-loop
+sample rate versus 30% adaptive is inconclusive. Detection coverage contrasts
+are summarized in [`EXPERIMENTAL_RESULTS.md`](EXPERIMENTAL_RESULTS.md). This
+analysis uses ten synthetic scenario clusters and does not estimate actual
+attacker engagement.
+
+Per-session CyberLab features could not be recovered from the temp directory;
+the retained file is aggregate-only. A new source download attempt failed with
+a connection error, so numeric feature-distance analysis remains unavailable.
+Docker Engine remains inaccessible from this execution environment, and
+Zeek/Suricata binaries are absent; no new live sensor verification is claimed.
+Browser automation is unavailable. The current local public-demo research
+panel still needs owner visual review; steps are listed in the final report.
 
 ## Earlier isolated verification (2026-11-25)
 
@@ -156,3 +246,16 @@ Use [Final Demo Guide](FINAL_DEMO_GUIDE.md), [Testing](TESTING.md), and
 [Demo Guide](DEMO_GUIDE.md). The exact suite commands and temporary-copy
 procedure are in `TESTING.md`; results above are from the recorded isolated
 run, not a new run of this document.
+
+## Final DAHIN closeout (2026-11-28)
+
+The newest isolated regression after the alternate-generator challenge and
+paired-interval additions is **404 backend tests passed, 0 failed, 0 skipped,
+1 Starlette/httpx deprecation warning**; frontend **28/28** and the
+public-config build passed. Current-source 3-node and 5-node localhost
+demonstrations passed integrity, trust, duplicate, downtime, and recovery
+checks. The current-source public app is available at
+`http://127.0.0.1:5174` for owner visual review; browser automation was
+unavailable, so that visual review is still required. See
+[`UPGRADE_PROGRESS.md`](UPGRADE_PROGRESS.md) for exact evidence and remaining
+limits.

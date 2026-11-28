@@ -33,6 +33,8 @@ from app.profiling.storage import SQLiteProfileStorage
 DEFAULT_MODEL_PATH = Path(__file__).resolve().parents[3] / "experiments" / "results" / "attacker_profile_models.joblib"
 MAX_HISTORY = 20
 MIN_EVIDENCE_EVENTS = 3
+MIN_FAILED_LOGINS_FOR_AUTH_PROBING = 3
+MIN_DISTINCT_USERNAMES_FOR_AUTH_PROBING = 2
 RECOMMENDATION_POLICY: dict[str, dict] = {
     "reconnaissance": {"strategy": "expanded_decoy_path", "action": "add_simulated_service_diversity", "title": "Increase simulated service diversity", "expected_scenario": "reconnaissance", "rationale": "Synthetic model classified reconnaissance-like connection behavior; vary only isolated simulated decoy paths."},
     "authentication_probing": {"strategy": "credential_decoy", "action": "add_synthetic_authentication_targets", "title": "Add synthetic authentication targets", "expected_scenario": "credential_probing", "rationale": "Authentication event aggregates support additional disabled synthetic login targets and audit opportunities."},
@@ -72,6 +74,42 @@ class AttackerProfileService:
     def model_version(self) -> str:
         return str(self._models()["metadata"]["model_version"])
 
+    @staticmethod
+    def _classification_with_evidence_gate(
+        predicted: str,
+        features: dict[str, int | float],
+        observation_count: int,
+    ) -> str:
+        """Abstain when the predicted category's defining telemetry is absent.
+
+        The classifier is trained on synthetic labels and cannot establish
+        intent. These deterministic gates prevent a synthetic class vote from
+        overriding missing real-event evidence. Thresholds mirror the
+        generator's minimum class-defining features; they are policy checks,
+        not learned or calibrated confidence thresholds.
+        """
+        if observation_count < MIN_EVIDENCE_EVENTS:
+            return "unknown"
+
+        evidence_requirements: dict[str, tuple[tuple[str, float], ...]] = {
+            "reconnaissance": (("connection_count", 5), ("unique_destination_ports", 3)),
+            "authentication_probing": (
+                ("failed_auth_count", MIN_FAILED_LOGINS_FOR_AUTH_PROBING),
+                ("unique_usernames_attempted", MIN_DISTINCT_USERNAMES_FOR_AUTH_PROBING),
+            ),
+            "repeated_connection": (("event_count", 12), ("connection_count", 10)),
+            "suspicious_session": (("command_attempt_count", 3),),
+            "multi_protocol": (("unique_protocol_count", 3),),
+        }
+        if predicted == "unknown":
+            return "unknown"
+        requirements = evidence_requirements.get(predicted)
+        if requirements is None:
+            return "unknown"
+        if not all(features.get(name, 0) >= minimum for name, minimum in requirements):
+            return "unknown"
+        return predicted
+
     def recompute(self, window_seconds: int = 3600) -> tuple[list[AttackerBehaviorProfile], int]:
         if type(window_seconds) is not int or not 60 <= window_seconds <= 86400:
             raise HTTPException(422, "Observation window must be between 60 and 86400 seconds")
@@ -97,7 +135,9 @@ class AttackerProfileService:
             cluster = int(bundle["clusterer"].predict(scaled)[0])
             profile_id = "profile-" + source_ref[:32]
             prior = self.storage.get_profile(profile_id)
-            classification = predicted if predicted in RECOMMENDATION_POLICY else "unknown"
+            classification = self._classification_with_evidence_gate(
+                predicted, features, len(historical)
+            )
             if prior is not None and prior.features == features and prior.classification == classification and prior.model_version == metadata["model_version"] and prior.observation_window_seconds == window_seconds:
                 profiles.append(prior)
                 recommendations_created += int(self.storage.add_recommendation(self._recommendation(prior)))
@@ -129,6 +169,7 @@ class AttackerProfileService:
                 limitations=[
                     "Training labels are synthetic scenario labels, not confirmed maliciousness.",
                     "Model vote fraction and anomaly index are not calibrated probabilities.",
+                    "Behavior categories are retained only when their defining aggregate evidence passes deterministic minimum gates; otherwise the result is unknown.",
                     "Source reference is a deterministic hash and is not anonymization.",
                 ],
             )

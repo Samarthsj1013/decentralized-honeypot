@@ -9,7 +9,7 @@ from app.api.routes import router as honeypot_router
 from app.events.models import HoneypotEvent
 from app.events.store import event_store
 from app.ledger.service import event_ledger
-from app.security import access_control_status, auth_router, authorize_api_request, validate_cors_origins
+from app.security import access_control_status, auth_router, authorize_api_request, configured_cors_origins
 
 
 # The append-only ledger is the durable interaction source. Restore its
@@ -29,15 +29,7 @@ app = FastAPI(
     version="0.1.0",
 )
 
-cors_origins = [
-    origin.strip()
-    for origin in os.getenv(
-        "HONEYPOT_CORS_ORIGINS",
-        "http://127.0.0.1:5173,http://localhost:5173",
-    ).split(",")
-    if origin.strip()
-]
-cors_origins = validate_cors_origins(cors_origins)
+cors_origins = configured_cors_origins()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,

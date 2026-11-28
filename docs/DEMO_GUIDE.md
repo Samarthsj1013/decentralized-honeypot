@@ -196,3 +196,36 @@ real-world effectiveness.
 [Experimental Evaluation](EXPERIMENTAL_EVALUATION.md) for request examples and
 metric definitions. Results are synthetic software measurements, not
 real-world detection accuracy or attacker behavior.
+
+## Review public research summaries
+
+The public snapshot endpoint is read-only and contains three distinct data
+types: a sanitized summary of one licensed public Cowrie dataset sample with
+no trusted behavior labels, a holdout comparison on generated synthetic
+labels, and a seeded synthetic deception experiment. It does not stream live
+telemetry. The browser sandbox continues to create and reset synthetic rows
+only in tab memory. The historical local Cowrie baseline is separate from
+both.
+
+The dashboard explains that the 15-observation historical profile originally
+showed `authentication_probing`, while the current evidence gate abstains to
+`unknown` because that successful-only aggregate had no failed logins. The
+original stored snapshot numbers remain visible for audit.
+
+Exact methods, the CyberLab source/license/checksum, holdout split seeds,
+paired mode measurements, and limitations are in
+[`EXPERIMENTAL_EVALUATION.md`](EXPERIMENTAL_EVALUATION.md) and
+[`EXPERIMENTAL_RESULTS.md`](EXPERIMENTAL_RESULTS.md). To repeat the 4-node
+localhost trust/recovery demonstration (all state is created in an
+auto-cleaned temporary directory):
+
+```powershell
+$repoRoot = (Get-Location).Path
+$env:PYTHONPATH = "$(Join-Path $repoRoot 'backend');$repoRoot"
+& (Join-Path $repoRoot '.venv/Scripts/python.exe') -m app.network.multi_node_demo --nodes 4
+```
+
+The demo verifies separate node databases and test-only keys, signed transfer,
+pending state, idempotent retry, tamper and untrusted-publisher rejection,
+peer downtime, and recovery. It is local process simulation over loopback, not
+multi-machine deployment or consensus.

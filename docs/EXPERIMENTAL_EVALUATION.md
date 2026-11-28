@@ -100,14 +100,95 @@ For a mode, summed over its requested scenario repetitions:
 | Mean synthetic interaction depth | Mean initial generated event count plus simulated follow-up events. This is not real session depth. |
 | Median virtual session duration | Median virtual event timestamp span, including generated follow-up timestamps. It is not observed attacker dwell time. |
 | Unique decoys accessed | Unavailable; synthetic source events do not identify decoy assets. |
-| Average event processing time | Measured local rule and incident-correlation processing time / events processed. Model training and synthetic data generation are excluded. |
+| Average event processing time | Wall time for the per-event detector and local incident-correlation loop / events processed. Includes local SQLite correlation work; excludes temporary incident-store setup, model training/classification, synthetic scenario generation, and result persistence. |
 | Experiment execution time | Measured wall time for the complete request, including model preparation, scenario generation, and persistence. Machine-dependent. |
 | Resource use | Peak memory is unavailable; it is never estimated. |
 
 Comparison differences are adaptive minus baseline. Percentage differences are
-omitted when baseline is zero or unavailable. The bounded default sample does
-not justify confidence intervals, and none are reported. Synthetic metrics
+omitted when baseline is zero or unavailable. The standard API does not
+calculate confidence intervals. A separate post-hoc scenario-cluster bootstrap
+is available for the retained 150-run artifact; its ten scenario clusters are
+too few for broad inference and the intervals describe only this synthetic
+generator. Synthetic metrics
 do not establish operational detection performance or real-world effectiveness.
+
+## Reproduced data and model review (2026-11-27)
+
+The data review used one published daily Cowrie export from the
+[CyberLab Zenodo record](https://zenodo.org/records/3687527), DOI
+`10.5281/zenodo.3687527`, under CC-BY-4.0. The selected archive's observed
+SHA-256 is
+`b681316de5ff58f8cae385fd4a2232d93ccdeb0b117ef58668195df5797d9c45`.
+Processing yielded 7,465 sessions and 35,742 events. The archive has no trusted
+behavior labels, so accuracy, precision, recall, and F1 are unavailable. The
+synthetic-trained model's unlabeled category counts are distribution-review
+outputs only. Raw compressed logs must remain outside the repository; the
+processor does not export session keys, IPs, usernames, passwords, commands,
+URLs, or payloads.
+
+For a fresh local review, keep downloads and outputs under `%TEMP%`:
+
+```powershell
+$raw = Join-Path $env:TEMP 'cyberlab_2019-05-18.json.gz'
+$summary = Join-Path $env:TEMP 'cyberlab-summary.json'
+Invoke-WebRequest `
+  -Uri 'https://zenodo.org/api/records/3687527/files/cyberlab_2019-05-18.json.gz/content' `
+  -OutFile $raw
+python experiments/process_cyberlab.py --input $raw --summary-output $summary
+```
+
+The independent synthetic holdout used 1,200 rows each for train, validation,
+and test, with seeds 20261127, 20261128, and 20261129; selected models were
+refit on 2,400 train-plus-validation rows. Random Forest, decision tree,
+logistic regression, and the fixed evidence-rule baseline each measured 100%
+accuracy and macro-F1, with 0% macro one-vs-rest FPR/FNR on the generated test
+split. The rule baseline mirrors the generator's label thresholds, and the
+other candidates see the same separable synthetic feature generator. These
+perfect scores do not establish real-world model utility.
+
+Because the original generator and its evidence-rule baseline produce perfectly
+separable classes, an additional prespecified test uses a distinct episode-
+based synthetic challenge. It chooses a latent dominant scenario before
+sampling features, then adds overlapping secondary behaviors, broader/noisier
+counts, missing aggregates, and benign low-activity examples. Fixed model
+parameters selected on the original generator are tested without tuning on
+the challenge rows. This remains synthetic-to-synthetic stress testing, not
+real-world validation. Reproduce with:
+
+```powershell
+$challenge = Join-Path $env:TEMP ('profile-challenge-' + [guid]::NewGuid().ToString('N') + '.json')
+python experiments/evaluate_profile_challenge.py --output $challenge `
+  --samples-per-category 200 --train-seed 20301127 --test-seed 20301128
+```
+
+Reproduce model and paired runs with unique temporary output paths:
+
+```powershell
+$modelOut = Join-Path $env:TEMP ('profile-eval-' + [guid]::NewGuid().ToString('N') + '.json')
+python experiments/evaluate_profile_models.py --output $modelOut `
+  --samples-per-category 200 `
+  --train-seed 20261127 --validation-seed 20261128 --test-seed 20261129
+
+$pairedOut = Join-Path $env:TEMP ('paired-deception-' + [guid]::NewGuid().ToString('N') + '.json')
+python experiments/run_deception_comparison.py --output $pairedOut `
+  --seed 20261127 --repetitions 5
+```
+
+For paired run-level deltas and scenario-cluster bootstrap intervals, pass the
+run artifact to `experiments/analyze_deception_comparison.py` with a new
+temporary JSON output path.
+
+The paired run covered 10 scenarios × 5 repetitions in baseline, adaptive,
+and closed-loop modes: 50/50 runs completed in each mode. Baseline measured
+75 TP, 0 FP, 150 FN (33.3% synthetic detection coverage); adaptive measured
+90 TP, 0 FP, 135 FN (40.0%); closed loop measured 95 TP, 0 FP, 140 FN
+(40.4%). Synthetic engagement estimates were 28%, 30%, and 20%, respectively;
+these are seeded model outcomes, not observed attacker behavior. Corrected
+per-event processing averages were 26.11 ms, 26.35 ms, and 23.86 ms on the
+recording machine and include temporary per-run SQLite incident correlation.
+FPR=0% is only the result against this generator's benign labels and rules; it
+is not an operational false-alarm estimate. Exact run summaries are retained
+in sanitized JSON artifacts referenced by the public snapshot.
 
 ## API
 

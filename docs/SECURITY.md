@@ -12,9 +12,11 @@
   identical pair fails closed. The admin token can read and mutate; the reader
   can only use safe methods. These shared credentials do not identify users.
 - Credentialed CORS permits only configured exact HTTP(S) origins; wildcard
-  origins, paths, user info, queries and fragments are rejected. CORS is not
-  authentication. Use TLS and a managed access-control layer outside the local
-  prototype.
+  origins, paths, user info, queries and fragments are rejected. In
+  `production`, `HONEYPOT_CORS_ORIGINS` must be explicitly configured and every
+  origin must use HTTPS; loopback HTTP defaults are development-only. CORS is
+  not authentication. Use TLS and a managed access-control layer outside the
+  local prototype.
 - The dashboard exchanges the operator-entered admin token for a 30-minute
   server-side session. Its cookie is `HttpOnly`, `SameSite=Strict`, scoped to
   `/api/v1`; mutating requests require a CSRF header token. Login is origin
@@ -35,8 +37,19 @@
   endpoint `/api/v1/network-node/dashboard`. Configure
   `HONEYPOT_NODE_DASHBOARD_URL` and `HONEYPOT_NODE_DASHBOARD_TOKEN` only in the
   backend process. The proxy uses a fixed summary path, short timeout, no
-  redirects, and a response-size limit. Never expose either value through a
-  `VITE_` variable.
+  redirects, and a response-size limit. Remote dashboard and intelligence
+  collector URLs must use HTTPS; plain HTTP is accepted only for loopback
+  addresses used by local development. The peer registry applies the same
+  rule to outbound node URLs. This prevents backend-held bearer tokens from
+  being sent to remote services over cleartext HTTP. Never expose either
+  value through a `VITE_` variable.
+- The public placement service uses `app.public_demo:app`, not the operator
+  application. Its route allowlist contains only `/healthz` and
+  `GET /api/v1/public-demo`; operational authentication, ingestion,
+  administration, ledger, and replication paths return not found. The public
+  React sandbox uses in-memory browser state and does not issue those
+  operational mutations. This is an anonymous read-only showcase, not a
+  protected operator dashboard.
 - Session role is administrator; existing bearer roles remain administrator
   and read-only reader. There are no individual accounts, MFA, identity
   provider, per-user audit, persistent session store, or distributed login
@@ -102,6 +115,21 @@ Suricata templates omit packet payloads and strip HTTP query/fragment values.
 Shared strategy records omit actor/event identifiers, raw events and free-text
 rationale.
 
+The public snapshot's research section contains bounded aggregate counts and
+model/experiment metrics only. The CyberLab sample is a public third-party
+Cowrie archive, but its raw logs can contain sensitive session data and are
+kept outside the repository. The processor hashes session identifiers only
+for in-memory duplicate detection and does not export raw identifiers or text.
+Because the sample has no trusted behavioral labels, accuracy/precision/
+recall/F1 are unavailable. Synthetic holdout scores and simulated engagement
+must be presented with their generator limitations, not as live detection or
+field effectiveness.
+
+Only explicitly named sanitized JSON summaries under `experiments/results/`
+are allowlisted by `.gitignore`; raw datasets, feature-model binaries, local
+databases, private keys, logs, and environment files remain excluded. Review
+the exact staged file list before any future commit.
+
 Node intelligence is an indicator claim, not verified ground truth. Imports
 are time-bounded to 30 days, retain publisher/key/source provenance, remain
 pending until an operator approves or rejects them, and write local audit
@@ -109,3 +137,15 @@ events. The displayed confidence score is a disclosed heuristic of the signed
 aggregate observation count only. Duplicate and classification-conflicting
 indicators are retained and linked for review. No intelligence action blocks
 traffic or automatically changes deception policy.
+
+## Final public-demo route check (2026-11-28)
+
+The current-source `app.public_demo:app` was exercised on loopback with an
+isolated temporary SQLite path and an exact local Vite origin. `/healthz` and
+`GET /api/v1/public-demo` returned 200; event, telemetry-ingest, evaluation,
+and ledger routes, method violations, and a query-string variant returned 404;
+an unapproved Origin returned 403. A public-config Vite build using an empty
+env directory had no match for the bounded private-key/bearer-token/admin
+token pattern scan. This verifies the configured showcase boundary for this
+run; it is not a general secret scan, penetration test, or review of the
+operational application's deployment security.
